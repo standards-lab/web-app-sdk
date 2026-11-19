@@ -6,7 +6,7 @@ service's events. Its API client returns a `Result` whose failure is go-web-sdk'
 problem, and its event sequence resumes by an opaque cursor, so an application survives reloads
 and reconnects without its own protocol code.
 
-It is a package under the `@standards-lab` scope, starting at v0.1.0 and released by a plain
+It is a package under the `@standards-lab` scope, released by a plain
 `vX.Y.Z` tag. Its goals live in the coordinator's roadmap (`standards-lab/context/roadmap.toml`,
 v1.client.stack), and its strategy is `standards-lab/context/web-client.md`. It has no runtime
 dependency; its only peers, `@nats-io/nats-core` and `@nats-io/jetstream` at `^3.5.0`, are
