@@ -15,6 +15,10 @@
       "types": "./dist/auth.d.ts",
       "default": "./dist/auth.js"
     },
+    "./router.js": {
+      "types": "./dist/router.d.ts",
+      "default": "./dist/router.js"
+    },
     "./service.js": {
       "types": "./dist/service.d.ts",
       "default": "./dist/service.js"

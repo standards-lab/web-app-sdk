@@ -19,7 +19,7 @@ const src = join(root, "src");
 const scratches: string[] = [];
 
 // The public subpaths, which package.json's exports lists: each module an app imports.
-const publics = ["./api.js", "./auth.js", "./service.js"];
+const publics = ["./api.js", "./auth.js", "./router.js", "./service.js"];
 // Node's condition sets, its defaults and the types condition TypeScript adds, with the build file
 // a public subpath's base resolves to under each.
 const conditions: [string[], string][] = [

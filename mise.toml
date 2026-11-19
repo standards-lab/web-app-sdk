@@ -77,9 +77,14 @@ description = "Run the unit tier on the build, the lint, and a pack of the build
 depends = ["preflight", "build"]
 run = "node --test 'test/unit/*.test.ts'"
 
+[tasks."test:browser"]
+description = "Run the browser tier on dist/ in the pinned chrome-headless-shell"
+depends = ["preflight browser", "build"]
+run = "BROWSER_EXECUTABLE=$(mise which chrome-headless-shell) node --test 'test/browser/*.test.ts'"
+
 [tasks.check]
 description = "Run every check; reads no network; writes dist/"
-depends = ["lint", "types", "build", "test:unit"]
+depends = ["lint", "types", "build", "test:unit", "test:browser"]
 
 [tasks.install]
 description = "Install the pins and node_modules; reads the network"

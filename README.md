@@ -3,7 +3,7 @@
 # web-app-sdk
 
 The application SDK of the web client stack: the API client and its Result and Problem types, the
-token hook, and the domain-service pattern. It is a runtime with no runtime dependency, written in
+token hook, the router, and the domain-service pattern. It is a runtime with no runtime dependency, written in
 TypeScript and shipped as ES modules with their declarations.
 
 ## Use
@@ -14,6 +14,7 @@ aren't importable:
 
 ```ts
 import { createClient } from "@standards-lab/web-app-sdk/api.js";
+import { createRouter } from "@standards-lab/web-app-sdk/router.js";
 import type { Service } from "@standards-lab/web-app-sdk/service.js";
 ```
 
@@ -28,12 +29,16 @@ import type { Service } from "@standards-lab/web-app-sdk/service.js";
   XMLHttpRequest and reports its progress. A `TokenProvider` puts a bearer token on each request
   and is asked once to refresh on a 401. `Page` is a page of a list.
 - `./auth.js`: the `TokenProvider` hook and the `anonymous` default, which sends no token.
+- `./router.js`: the router, `createRouter` and `Router`, with `Routes`, `Loader`, and `Match`. It
+  mounts each route's element in its outlet, loading its module on the first visit, and the
+  `error` option's element when a route fails; it dispatches `change`, and `start()` and `query()`
+  return promises. Its base is the `base` option, else the document's `<base href>`, else `/`.
 - `./service.js`: the domain-service pattern, `Service`, `Endpoint`, and `ServiceFactory`, as
   types: an app's domains tier writes each service as a stateless object over a `Client`, checked
   with `satisfies Service`.
 
-The runtime targets the browser. `upload` needs `XMLHttpRequest`; where there is none, as on Node,
-it resolves to the network problem.
+The runtime targets the browser. The router needs the Navigation API and `URLPattern`. `upload`
+needs `XMLHttpRequest`; where there is none, as on Node, it resolves to the network problem.
 
 ## Development
 
@@ -41,14 +46,17 @@ Tasks run through [mise](https://mise.jdx.dev):
 
 ```
 mise run install    # the pinned tools and node_modules; reads the network
-mise run check      # lint, types, build, and the unit tier; reads no network
+mise run check      # lint, types, build, and both test tiers; reads no network
 mise run build      # src/ into dist/
 mise run currency   # report every tool, package, action pin, and tooling tag behind its latest
 ```
 
-The unit tier runs under `node --test`: the client against a loopback server, the event-stream
-parser, tsc's refusal of runtime code in a declaration file, the layer's import rules, and a pack
-of the build.
+The check runs two test tiers on the build. The unit tier runs under `node --test`: the client
+against a loopback server, the event-stream parser, tsc's refusal of runtime code in a declaration
+file, the layer's import rules, and a pack of the build. The browser tier runs the router and the
+upload in the pinned `chrome-headless-shell`, on the driver and server of
+[web-tooling](https://github.com/standards-lab/web-tooling), a devDependency at its release tag.
+`mise run install` installs the pin.
 
 ## License
 
