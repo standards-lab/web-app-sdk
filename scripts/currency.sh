@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Prints `<where>: <item> <pin> -> <latest>` for each mise tool, package.json dependency, GitHub
-# Actions pin, and github: devDependency's tag behind its latest, and exits 1 if any; prints
-# nothing when all are current. Reads the network.
-# From spike-html-apps-sdk (df65376): scripts/currency.sh.
+# Actions pin, and github: devDependency's tag behind its latest, and each optional peer's range
+# that doesn't admit its package's latest release, and exits 1 if any; prints nothing when all are
+# current. Reads the network.
+# Adapted from spike-html-apps-sdk (df65376): scripts/currency.sh, with web-components' peer range
+# check.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -42,6 +44,15 @@ while read -r package pin; do
   fi
   if [[ $pin != "$latest" ]]; then
     trailing+=$'\n'"package.json: $package $pin -> $latest"
+  fi
+  # A peer (a NATS package) is by a caret range, which must admit that latest release, so an app
+  # can install it beside the SDK: by the release test's own rule.
+  range=$(node -p 'require("./package.json").peerDependencies?.[process.argv[1]] ?? ""' "$package")
+  if [[ -n $range ]] && ! node --input-type=module -e '
+    import { caretAdmits } from "./test/unit/release.ts";
+    process.exit(caretAdmits(...process.argv.slice(1)) ? 0 : 1);
+  ' "$range" "$latest"; then
+    trailing+=$'\n'"package.json: peer $package $range -> ^$latest"
   fi
 done <<<"$pins"
 

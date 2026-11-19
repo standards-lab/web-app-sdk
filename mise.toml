@@ -59,6 +59,7 @@ depends = ["types:src", "types:test"]
 
 [tasks."types:src"]
 description = "Type-check the sources with tsc"
+depends = ["preflight"]
 run = "tsc --noEmit -p ."
 
 # The tests import the package by its name, which resolves to dist/'s declarations, so the build
@@ -70,6 +71,7 @@ run = "tsc -p tsconfig.test.json"
 
 [tasks.build]
 description = "Build src/ into dist/: tsc's emit, with any handwritten .d.ts beside it"
+depends = ["preflight"]
 run = "scripts/build.sh"
 
 [tasks."test:unit"]
@@ -91,6 +93,6 @@ description = "Install the pins and node_modules; reads the network"
 run = ["mise install", "pnpm install --frozen-lockfile"]
 
 [tasks.currency]
-description = "Report every mise tool, package.json pin, action pin, and the tooling's tag behind its latest, exiting nonzero if any"
+description = "Report every mise tool, package.json pin, action pin, the tooling's tag, and the NATS peers' ranges behind its latest, exiting nonzero if any"
 run = "scripts/currency.sh"
 quiet = true

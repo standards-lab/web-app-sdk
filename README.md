@@ -95,7 +95,7 @@ Tasks run through [mise](https://mise.jdx.dev):
 mise run install    # the pinned tools, and node_modules with the tooling at its tag; reads the network
 mise run check      # lint, types, build, and the unit and browser tiers; reads no network
 mise run build      # src/ into dist/
-mise run currency   # report every tool, package, and action pin, and the tooling's tag, behind its latest
+mise run currency   # report every tool, package, and action pin, the tooling's tag, and the peer ranges, behind its latest
 ```
 
 The check runs two test tiers on the build. The unit tier runs under `node --test`: the client
