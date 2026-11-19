@@ -1,0 +1,62 @@
+{
+  "name": "@standards-lab/web-app-sdk",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./api.js": {
+      "types": "./dist/api.d.ts",
+      "default": "./dist/api.js"
+    },
+    "./auth.js": {
+      "types": "./dist/auth.d.ts",
+      "default": "./dist/auth.js"
+    },
+    "./router.js": {
+      "types": "./dist/router.d.ts",
+      "default": "./dist/router.js"
+    },
+    "./service.js": {
+      "types": "./dist/service.d.ts",
+      "default": "./dist/service.js"
+    },
+    "./events.js": {
+      "types": "./dist/events.d.ts",
+      "default": "./dist/events.js"
+    },
+    "./events/nats.js": {
+      "types": "./dist/events/nats.d.ts",
+      "default": "./dist/events/nats.js"
+    }
+  },
+  "peerDependencies": {
+    "@nats-io/jetstream": "^3.5.0",
+    "@nats-io/nats-core": "^3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@nats-io/jetstream": {
+      "optional": true
+    },
+    "@nats-io/nats-core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@nats-io/jetstream": "3.5.0",
+    "@nats-io/nats-core": "3.5.0",
+    "@standards-lab/web-tooling": "github:standards-lab/web-tooling#v0.1.0",
+    "@types/node": "26.6.6",
+    "eslint": "10.15.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-boundaries": "7.4.4",
+    "eslint-plugin-import-x": "4.18.1",
+    "globals": "17.14.0",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.73.0"
+  }
+}
