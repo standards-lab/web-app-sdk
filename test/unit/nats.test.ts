@@ -2,7 +2,7 @@
 // mise run build wrote, against a real nats-server (test/unit/nats-server.ts) over WebSocket: the
 // sequence contract, its token and refresh, its decoding of go-messaging's binary content mode, a
 // server restart mid-read, and the package's other subpaths loading without the @nats-io packages.
-// From spike-html-apps-sdk (df65376): test/unit/nats.test.ts.
+// Adapted from spike-html-apps-sdk (df65376): test/unit/nats.test.ts, its take from the contract.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -29,6 +29,7 @@ import {
   forged,
   otherFailure,
   sequenceContract,
+  take,
   unknownCursor,
 } from "./sequence-contract.ts";
 
@@ -91,14 +92,14 @@ async function publish(event: CloudEvent, body?: string | Uint8Array) {
 }
 
 let streams = 0;
-/** A fresh stream holding `events`, `keep` its max_msgs, and the sequence over it; close() closes
- * the sequence and deletes the stream, whose subjects the next test's stream takes. */
 /** How a fresh stream is made: `keep`, its max_msgs, and the sequence's token provider. */
 interface FreshOptions {
   keep?: number;
   token?: TokenProvider;
 }
 
+/** A fresh stream holding `events`, `keep` its max_msgs, and the sequence over it; close() closes
+ * the sequence and deletes the stream, whose subjects the next test's stream takes. */
 async function fresh(events: CloudEvent[], { keep, token = authorized }: FreshOptions = {}) {
   const stream = `TIER${++streams}`;
   await jsm.streams.add({ name: stream, subjects, max_msgs: keep ?? -1 });
@@ -127,16 +128,6 @@ async function using(
   } finally {
     await made.close();
   }
-}
-
-/** The first `count` deliveries of `iterable`, the read then ended by a break. */
-async function take<T>(iterable: AsyncIterable<T>, count: number): Promise<T[]> {
-  const deliveries: T[] = [];
-  for await (const delivery of iterable) {
-    deliveries.push(delivery);
-    if (deliveries.length === count) break;
-  }
-  return deliveries;
 }
 
 sequenceContract("the NATS sequence", (events, options) => fresh(events, options));

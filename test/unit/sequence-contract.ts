@@ -2,7 +2,7 @@
 // test against a sequence a factory makes. test/unit/events.test.ts runs it against the in-memory
 // sequence; an adapter's suite runs it against the adapter, over a live server. Every test has a
 // timeout, so a read that hangs, never delivering or never ending, fails rather than stalls.
-// From spike-html-apps-sdk (df65376): test/unit/sequence-contract.ts.
+// Adapted from spike-html-apps-sdk (df65376): test/unit/sequence-contract.ts, its take exported.
 
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
@@ -60,7 +60,7 @@ export const otherFailure =
   };
 
 /** The first `count` deliveries of `iterable`, the read then ended by a break. */
-async function take<T>(iterable: AsyncIterable<T>, count: number): Promise<T[]> {
+export async function take<T>(iterable: AsyncIterable<T>, count: number): Promise<T[]> {
   const deliveries: T[] = [];
   for await (const delivery of iterable) {
     deliveries.push(delivery);
