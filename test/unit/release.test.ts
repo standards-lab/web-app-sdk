@@ -19,7 +19,14 @@ const src = join(root, "src");
 const scratches: string[] = [];
 
 // The public subpaths, which package.json's exports lists: each module an app imports.
-const publics = ["./api.js", "./auth.js", "./router.js", "./service.js"];
+const publics = [
+  "./api.js",
+  "./auth.js",
+  "./router.js",
+  "./service.js",
+  "./events.js",
+  "./events/nats.js",
+];
 // Node's condition sets, its defaults and the types condition TypeScript adds, with the build file
 // a public subpath's base resolves to under each.
 const conditions: [string[], string][] = [
@@ -176,8 +183,8 @@ describe("release pack", () => {
       'exports["./api.js"] isn\'t a types and a default condition',
     ],
     "a public subpath missing from exports": [
-      (_, copy) => delete copy.exports["./service.js"],
-      'exports has no "./service.js"',
+      (_, copy) => delete copy.exports["./events/nats.js"],
+      'exports has no "./events/nats.js"',
     ],
     "a pattern export, which reaches the internal module": [
       (_, copy) => (copy.exports["./*.js"] = { types: "./dist/*.d.ts", default: "./dist/*.js" }),

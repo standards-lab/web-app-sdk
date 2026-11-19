@@ -11,7 +11,7 @@ node = "26.13.1"
 pnpm = "12.21.0"
 shellcheck = "0.11.0"
 "github:microsoft/typescript-go" = { version = "7.0.2", version_prefix = "typescript/v", bin_path = "package/lib" }
-# The NATS adapter's server, which the unit tier's adapter suite starts on the loopback address.
+# The NATS adapter's server, which test/unit/nats.test.ts starts per suite on the loopback address.
 # mise's registry maps nats-server to github:nats-io/nats-server.
 nats-server = "2.15.3"
 
@@ -73,9 +73,9 @@ description = "Build src/ into dist/: tsc's emit, with any handwritten .d.ts bes
 run = "scripts/build.sh"
 
 [tasks."test:unit"]
-description = "Run the unit tier on the build, the lint, and a pack of the build"
-depends = ["preflight", "build"]
-run = "node --test 'test/unit/*.test.ts'"
+description = "Run the unit tier on the build, the lint, a pack of the build, and the NATS adapter in the pinned nats-server"
+depends = ["preflight nats", "build"]
+run = "NATS_SERVER=$(mise which nats-server) node --test 'test/unit/*.test.ts'"
 
 [tasks."test:browser"]
 description = "Run the browser tier on dist/ in the pinned chrome-headless-shell"

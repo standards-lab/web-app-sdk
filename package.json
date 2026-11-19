@@ -22,6 +22,14 @@
     "./service.js": {
       "types": "./dist/service.d.ts",
       "default": "./dist/service.js"
+    },
+    "./events.js": {
+      "types": "./dist/events.d.ts",
+      "default": "./dist/events.js"
+    },
+    "./events/nats.js": {
+      "types": "./dist/events/nats.d.ts",
+      "default": "./dist/events/nats.js"
     }
   },
   "peerDependencies": {
