@@ -16,7 +16,7 @@ describe("layer imports", () => {
   test("the eslint installed is the one package.json pins", () => {
     const eslint = join(root, "node_modules", ".bin", "eslint");
     const run = spawnSync(eslint, ["--version"], { encoding: "utf8" });
-    assert.equal(run.stdout.trim(), `v${manifest.devDependencies.eslint}`);
+    assert.equal(run.stdout.trim(), `v${manifest.devDependencies?.eslint}`);
   });
 
   // One tree, so each case is judged beside the others, as the package's files are.

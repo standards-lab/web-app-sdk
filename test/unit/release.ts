@@ -22,7 +22,12 @@ export interface Manifest {
   dependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
-  devDependencies: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+/** root's package.json. */
+export function readManifest(root: string): Manifest {
+  return JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
 }
 
 /** Every file below `dir`, relative to it with / separators, sorted. */
@@ -58,7 +63,7 @@ export function resolveSelf(
   subpaths: string[],
   conditions: string[] = [],
 ): Resolution[] {
-  const { name } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
+  const { name } = readManifest(root);
   const specifiers = subpaths.map((subpath) => name + subpath.slice(1));
   const args = [...conditions, "--input-type=module", "-e", resolveArgs, ...specifiers];
   // The script's output: per specifier, the URL Node resolves it to or the error code it gives.
@@ -106,7 +111,7 @@ const licenseHeading = /^\s*Apache License\s+Version 2\.0, January 2004\s/;
  * line each: the declaration and the LICENSE beside package.json. */
 export function licenseProblems(root: string): string[] {
   const problems: string[] = [];
-  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
+  const manifest = readManifest(root);
   if (manifest.license !== license) {
     problems.push(`package.json declares license ${manifest.license}, not ${license}`);
   }
@@ -121,7 +126,7 @@ export function licenseProblems(root: string): string[] {
 /** The NATS adapter's packages, the release's only peers: each optional, so an app that never
  * imports the adapter installs neither, and each by a caret range, which the repository's own
  * install of it, a devDependency at one exact version, falls within. */
-export const natsPackages = ["@nats-io/nats-core", "@nats-io/jetstream"];
+const natsPackages = ["@nats-io/nats-core", "@nats-io/jetstream"];
 const caretRange = /^\^\d+\.\d+\.\d+$/;
 const exactVersion = /^\d+\.\d+\.\d+$/;
 
@@ -132,7 +137,7 @@ const tooling = "@standards-lab/web-tooling";
 const toolingTag = /^github:standards-lab\/web-tooling#v\d+\.\d+\.\d+$/;
 
 /** Whether the caret range, ^x.y.z, admits the version x.y.z: the same leftmost nonzero part and
- * no lower, so ^0.1.0 admits 0.1.x only. */
+ * no lower, so ^0.1.0 admits 0.1.x only. mise run currency asks it too. */
 export function caretAdmits(range: string, version: string): boolean {
   const [major, minor, patch] = range.slice(1).split(".").map(Number);
   const [vMajor, vMinor, vPatch] = version.split(".").map(Number);
@@ -150,7 +155,7 @@ export function caretAdmits(range: string, version: string): boolean {
  * optional caret-range peers and nothing else, and the tooling at its release tag. */
 export function dependencyProblems(root: string): string[] {
   const problems: string[] = [];
-  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
+  const manifest = readManifest(root);
   const peers = manifest.peerDependencies ?? {};
   const meta = manifest.peerDependenciesMeta ?? {};
   const dev = manifest.devDependencies ?? {};
@@ -202,7 +207,7 @@ export function dependencyProblems(root: string): string[] {
  * by the public ones' relative imports and never through the package's name. */
 export function releaseProblems(root: string, src: string, publics: string[]): string[] {
   const problems = [...licenseProblems(root), ...dependencyProblems(root)];
-  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
+  const manifest = readManifest(root);
   const { exports = {}, files = [] } = manifest;
   const packed = listFiles(root);
   const built = packed.filter((path) => path.startsWith("dist/"));

@@ -5,15 +5,15 @@
 // web-foundation and web-components, and the template above them, web-app-sdk-template.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import type { Manifest } from "./release.ts";
+import { readManifest } from "./release.ts";
 
 const root = join(import.meta.dirname, "../..");
 
 /** The package's manifest as it stands, which the tree carries, so each import is judged against
  * it. */
-export const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
+export const manifest = readManifest(root);
 const sdk = manifest.name;
 
 /** The stack's other layers, web-foundation and web-components, and the template above every
