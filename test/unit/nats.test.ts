@@ -1,7 +1,8 @@
 // The NATS adapter as a consumer imports it, the package's ./events/nats.js export over the dist/
 // mise run build wrote, against a real nats-server (test/unit/nats-server.ts) over WebSocket: the
 // sequence contract, its token and refresh, its decoding of go-messaging's binary content mode, a
-// server restart mid-read, and the package's other subpaths loading without the @nats-io packages.
+// server restart mid-read and a new read from a stored cursor after one, and the package's other
+// subpaths loading without the @nats-io packages.
 // Adapted from spike-html-apps-sdk (df65376): test/unit/nats.test.ts, its take from the contract.
 
 import assert from "node:assert/strict";
@@ -365,6 +366,16 @@ describe("the NATS sequence's decoding", { timeout: 15000 }, () => {
 });
 
 describe("the NATS sequence across a server restart", { timeout: 30000 }, () => {
+  /** Restarts the server on the same store, resolving once the publisher has reconnected, as the
+   * adapter does (nats-core's default, every 2 s), so a test appends after it. */
+  async function restart() {
+    const reconnected = (async () => {
+      for await (const status of publisher.status()) if (status.type === "reconnect") return;
+    })();
+    await server.restart();
+    await reconnected;
+  }
+
   test("a read waiting through a restart continues after the last event it delivered", () =>
     using(
       [1, 2, 3].map((n) => cloudEvent(n)),
@@ -374,13 +385,7 @@ describe("the NATS sequence across a server restart", { timeout: 30000 }, () => 
         try {
           const seen: CloudEvent[] = [];
           for (let n = 0; n < 2; n++) seen.push((await deliveries.next()).value.event);
-          // The publisher reconnects as the adapter does (nats-core's default, every 2 s); it
-          // appends once it has.
-          const reconnected = (async () => {
-            for await (const status of publisher.status()) if (status.type === "reconnect") return;
-          })();
-          await server.restart();
-          await reconnected;
+          await restart();
           await append(cloudEvent(4));
           for (let n = 0; n < 2; n++) seen.push((await deliveries.next()).value.event);
           assert.deepEqual(
@@ -389,6 +394,41 @@ describe("the NATS sequence across a server restart", { timeout: 30000 }, () => 
           );
         } finally {
           await deliveries.return?.();
+        }
+      },
+    ));
+
+  test("a new sequence read from a stored cursor after a restart delivers exactly the events after it", () =>
+    using(
+      [1, 2, 3].map((n) => cloudEvent(n)),
+      {},
+      async ({ stream, sequence, append }) => {
+        // An app reads two events, stores the last cursor, and reloads: its read and its sequence
+        // end before the restart, and a new sequence reads from the stored cursor after it.
+        const before = await take(sequence.read(), 2);
+        const stored = before[1].cursor;
+        await sequence.close();
+        await restart();
+        await append(cloudEvent(4));
+        await append(cloudEvent(5));
+        const reloaded = natsSequence({ servers: server.url, stream, token: authorized });
+        const deliveries = reloaded.read({ after: stored })[Symbol.asyncIterator]();
+        try {
+          const seen = [];
+          for (let n = 0; n < 3; n++) seen.push((await deliveries.next()).value);
+          assert.deepEqual(
+            seen,
+            [3, 4, 5].map((n) => ({ event: cloudEvent(n), cursor: String(n) })),
+          );
+          // Nothing follows the last event the stream holds until another is appended: no
+          // duplicate of one already delivered.
+          const next = deliveries.next();
+          assert.equal(await Promise.race([next, delay(200).then(() => "waiting")]), "waiting");
+          await append(cloudEvent(6));
+          assert.deepEqual((await next).value, { event: cloudEvent(6), cursor: "6" });
+        } finally {
+          await deliveries.return?.();
+          await reloaded.close();
         }
       },
     ));
