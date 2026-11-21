@@ -22,7 +22,7 @@ web-components' at a659353. The files with no line have their provenance here:
 - `package.json` is adapted from spike-html-apps-sdk (df65376): package.json. It is renamed
   `@standards-lab/web-app-sdk` at 0.1.0, takes its optional `@nats-io/nats-core` and
   `@nats-io/jetstream` peers at `^3.5.0` (their devDependencies at 3.5.0), and replaces the
-  spike's tooling devDependency with web-tooling's v0.1.0 tag; its other pins are web-components'.
+  spike's tooling devDependency with web-tooling's v0.1.0 tag.
 - `.prettierrc.json` is from spike-html-apps-sdk (df65376): .prettierrc.json.
 - `LICENSE` is from spike-html-apps-sdk (df65376): LICENSE, unchanged.
 - `pnpm-lock.yaml` is generated, not copied.

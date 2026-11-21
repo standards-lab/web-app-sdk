@@ -11,11 +11,11 @@ This page holds the reasoning behind the repository's configuration and tests. T
 
 - **nats-server** is the NATS adapter's test server, which `test/unit/nats-server.ts` starts per
   suite on the loopback address. mise's registry maps it to `github:nats-io/nats-server`.
-- **chrome-headless-shell** is the browser tier's browser, at web-components' pin. Chrome for
-  Testing publishes no checksums, so each bump takes the sha256 and size from the download by
-  hand. mise caches a download by its checksum, so a version bumped without its own sha256
-  installs the old build; the preflight compares the installed browser's version with the pin and
-  fails, naming the sha256, when they differ.
+- **chrome-headless-shell** is the browser tier's browser. Chrome for Testing publishes no
+  checksums, so each bump takes the sha256 and size from the download by hand. mise caches a
+  download by its checksum, so a version bumped without its own sha256 installs the old build; the
+  preflight compares the installed browser's version with the pin and fails, naming the sha256, when
+  they differ.
 - **actionlint** shellchecks each workflow's `run:` block too, with the pinned shellcheck.
 - `types:test` depends on `build`: the tests import the package by its name, which resolves to
   `dist/`'s declarations.

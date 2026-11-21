@@ -2,7 +2,8 @@
 # Fails naming mise run install when a tool a task needs is missing: the node_modules tooling and
 # the NATS adapter's packages, which the build reads, with `browser`, the pinned
 # chrome-headless-shell, and with `nats`, the pinned nats-server.
-# Adapted from spike-html-apps-sdk (df65376): scripts/preflight.sh, with web-components' checks.
+# Adapted from spike-html-apps-sdk (df65376): scripts/preflight.sh, with the checks below added.
+# Adapted from web-components (a659353): scripts/preflight.sh, its tool and browser checks.
 set -euo pipefail
 
 fail() {
