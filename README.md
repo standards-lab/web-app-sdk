@@ -150,7 +150,7 @@ the tag's tree to the pack, file for file; and creates the GitHub release from t
 
 The package is seeded by copy from spike-html-apps-sdk at df65376, its v0.4.0 code, and moved onto
 web-tooling v0.1.0 and the `@nats-io` 3.5.0 packages. Each copied file that takes comments names
-its source in a provenance line.
+each of its sources in a provenance line.
 
 ## License
 

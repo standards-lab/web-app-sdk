@@ -16,7 +16,7 @@ optional and imported by `./events/nats.js` alone.
 
 The package is seeded by copy from spike-html-apps-sdk at df65376, its v0.4.0 code with pnpm's
 `minimumReleaseAge: 0`. The spike is archived and never a dependency. Each copied file that takes
-comments names its source in a provenance line; the workflows and CHANGELOG.md name theirs,
+comments names each of its sources in a provenance line; the workflows and CHANGELOG.md name theirs,
 web-components' at a659353. The files with no line have their provenance here:
 
 - `package.json` is adapted from spike-html-apps-sdk (df65376): package.json. It is renamed
