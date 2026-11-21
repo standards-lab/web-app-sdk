@@ -1,5 +1,5 @@
-<!-- Adapted from spike-html-apps-sdk (df65376): README.md, for @standards-lab/web-app-sdk.
-Adapted from web-components (a659353): README.md, its Release section for web-app-sdk. -->
+<!-- Adapted from spike-html-apps-sdk (df65376): README.md, for @standards-lab/web-app-sdk. -->
+<!-- Adapted from web-components (a659353): README.md, its Release section. -->
 
 # web-app-sdk
 
