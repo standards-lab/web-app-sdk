@@ -1,5 +1,3 @@
-// The default token provider as a consumer imports it: the package's ./auth.js export, which
-// resolves to the dist/ mise run build wrote.
 // From spike-html-apps-sdk (df65376): test/unit/auth.test.ts.
 
 import assert from "node:assert/strict";

@@ -1,6 +1,3 @@
-// The router fixture's app: its elements, its route table, and the hooks the browser tier calls.
-// setup() makes the router over the table, with the base and the notFound and error elements a test
-// asks for, and links under the prefix; snapshot() reads the URL, the outlet, and current.
 // From spike-html-apps-sdk (df65376): test/fixtures/router-app.js.
 
 import { createRouter } from "@standards-lab/web-app-sdk/router.js";
@@ -9,11 +6,8 @@ for (const tag of ["x-home", "x-about", "x-user", "x-not-found", "x-error"]) {
   customElements.define(tag, class extends HTMLElement {});
 }
 
-/** How many times the lazy route's loader has run. */
 window.loads = 0;
 
-/** The route table: defined tags, a loader that defines its tag, a loader that rejects, and a loader
- * whose tag nothing defines. users/me comes after users/:user, so it never wins. */
 const routes = {
   "": "x-home",
   about: "x-about",
@@ -27,7 +21,6 @@ const routes = {
   ghost: async () => "x-ghost",
 };
 
-/** The links setup() writes, by id, each relative to the prefix, but for the ones that leave it. */
 const links = {
   home: "",
   about: "about",
@@ -41,8 +34,6 @@ const links = {
 
 const outlet = document.getElementById("outlet");
 
-/** Makes the router, as `window.router`, without starting it. `base` is the base option,
- * `baseElement` a <base> element's href, and `prefix` the path the links are under. */
 window.setup = ({ base, baseElement, prefix = "/", notFound = false, error = false } = {}) => {
   if (baseElement !== undefined) {
     const element = document.createElement("base");
@@ -86,13 +77,10 @@ window.setup = ({ base, baseElement, prefix = "/", notFound = false, error = fal
   navigation.addEventListener("navigateerror", (event) =>
     window.navigateErrors.push(event.error.message),
   );
-  // Every navigate event, by its type, so a test can wait for one the router leaves alone.
   window.navigates = [];
   navigation.addEventListener("navigate", (event) => window.navigates.push(event.navigationType));
 };
 
-/** The URL's path, query, and fragment, the outlet's markup, and current, its query as a string,
- * or "undefined" when it is, which JSON would drop. */
 window.snapshot = () => {
   const { current: match } = window.router;
   const current = match === undefined ? "undefined" : { ...match, query: match.query.toString() };
@@ -103,13 +91,11 @@ window.snapshot = () => {
   };
 };
 
-/** Resolves to the snapshot at the router's next change. */
 window.nextChange = () =>
   new Promise((resolve) => {
     window.router.addEventListener("change", () => resolve(window.snapshot()), { once: true });
   });
 
-/** The promise's outcome as JSON: "resolved", or the rejection's message. */
 window.settle = (promise) =>
   promise.then(
     () => "resolved",

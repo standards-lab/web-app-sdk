@@ -93,7 +93,7 @@ Tasks run through [mise](https://mise.jdx.dev):
 
 ```
 mise run install    # the pinned tools, and node_modules with the tooling at its tag; reads the network
-mise run check      # lint, types, build, and the unit and browser tiers; reads no network
+mise run check      # lint, lint-context, lint-references, types, build, and both test tiers; reads no network
 mise run build      # src/ into dist/
 mise run currency   # report every tool, package, and action pin, the tooling's tag, and the peer ranges, behind its latest
 ```
@@ -105,8 +105,14 @@ code in a declaration file, the layer's import rules, and a pack of the build. T
 runs the router and the upload in the pinned `chrome-headless-shell`, on the driver and server of
 [web-tooling](https://github.com/standards-lab/web-tooling), a devDependency at its release tag.
 
-The check lints with ESLint, Prettier, shellcheck, and actionlint. CI runs `mise run install` and
-the check on each pull request to main and each push to it.
+The check lints with ESLint, Prettier, shellcheck, actionlint, and marathon's lint-context and
+lint-references. CI runs `mise run install` and the check on each pull request to main and each
+push to it.
+
+[docs/development.md](https://github.com/standards-lab/web-app-sdk/blob/main/docs/development.md)
+holds the reasoning behind the configuration and the tests, and
+[docs/internals.md](https://github.com/standards-lab/web-app-sdk/blob/main/docs/internals.md)
+behind the runtime's implementation.
 
 ## Release
 
@@ -144,7 +150,7 @@ the tag's tree to the pack, file for file; and creates the GitHub release from t
 
 The package is seeded by copy from spike-html-apps-sdk at df65376, its v0.4.0 code, and moved onto
 web-tooling v0.1.0 and the `@nats-io` 3.5.0 packages. Each copied file that takes comments names
-its source in a provenance line.
+each of its sources in a provenance line.
 
 ## License
 

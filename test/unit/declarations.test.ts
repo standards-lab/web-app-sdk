@@ -1,7 +1,4 @@
-// tsc, under tsconfig.json, refusing runtime code in a declaration file and checking its types,
-// run against scratch trees.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/declarations.test.ts, without its
-// comparison of the build's declarations against the spike's v0.1.0 fixtures.
+// Adapted from spike-html-apps-sdk (df65376): test/unit/declarations.test.ts, without fixtures.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -11,10 +8,8 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 
 const root = join(import.meta.dirname, "../..");
-// The check's own tsc, mise.toml's TypeScript-Go pin, not the typescript package in node_modules.
 const tsc = "tsc";
 
-/** Each "path code" tsc reports, sorted, for `files` (paths under layers/ to sources) in scratch. */
 function check(files: Record<string, string>): string[] {
   const scratch = mkdtempSync(join(tmpdir(), "declarations-"));
   try {
@@ -29,8 +24,6 @@ function check(files: Record<string, string>): string[] {
     const run = spawnSync(tsc, ["--noEmit", "-p", "."], { cwd: scratch, encoding: "utf8" });
     assert.equal(run.error, undefined, `tsc didn't run: ${run.error}`);
     const errors = [...run.stdout.matchAll(/^layers\/(\S+)\(\d+,\d+\): error (TS\d+)/gm)];
-    // An error outside the scratch layers/ (a config tsc can't read, say) would leave the list
-    // empty and pass the cases that expect none, so every error tsc reports must be one of these.
     assert.equal(run.stdout.match(/error TS\d+/g)?.length ?? 0, errors.length, run.stdout);
     return errors.map(([, path, code]) => `${path} ${code}`).sort();
   } finally {
@@ -46,7 +39,6 @@ const runtime = {
   "auth.d.ts": `export interface TokenProvider {}\nexport const anonymous: TokenProvider = {};`,
 };
 
-// skipLibCheck off is the guard: with it on, tsc skips every .d.ts, and these errors with them.
 describe("SDK declarations", () => {
   test("tsc, under tsconfig.json, refuses runtime code in a declaration file", () => {
     assert.deepEqual(check(runtime), [

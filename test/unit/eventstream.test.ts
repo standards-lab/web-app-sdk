@@ -1,7 +1,3 @@
-// The event-stream parser, against the WHATWG HTML standard's event-stream format: a sample stream
-// split at every byte boundary, and each rule of the format on its own. The parser is internal, so
-// the suite imports the built module by its path in dist/, which mise run build wrote, never by an
-// export the package means.
 // From spike-html-apps-sdk (df65376): test/unit/eventstream.test.ts.
 
 import assert from "node:assert/strict";
@@ -11,7 +7,6 @@ import { EventStreamParser } from "../../dist/eventstream.js";
 
 const encoder = new TextEncoder();
 
-/** The events a fresh parser dispatches over `chunks` (strings encoded, or bytes), and the parser. */
 function parse(...chunks: (string | Uint8Array)[]) {
   const parser = new EventStreamParser();
   const events = [];
@@ -22,9 +17,6 @@ function parse(...chunks: (string | Uint8Array)[]) {
   return { events, parser };
 }
 
-// Every rule at once: a BOM, CRLF, CR, and LF line ends, a comment, multi-line data, multi-byte
-// UTF-8, a field with no ":", an id that carries and one that clears, an id with NUL, retry, an
-// event with no data, and an event a blank line never ends.
 const sample = [
   "\uFEFF: a comment\r\n",
   "event: greeting\r\ndata: héllo\r\ndata: wörld 🌍\r\nid: 1\r\n\r\n",
@@ -98,7 +90,6 @@ describe("the format's rules", () => {
   });
 
   test("only a leading BOM: a later one is part of the line", () => {
-    // A BOM then "data" names no field the format knows, so the second event has no data.
     assert.deepEqual(parse("\uFEFFdata: x\n\n", "\uFEFFdata: y\n\n").events, [
       { type: "message", data: "x" },
     ]);

@@ -1,10 +1,4 @@
-// The release's integrity: a pnpm pack of the build, extracted, against package.json's files and
-// exports, its license, and its dependencies, by release.ts's releaseProblems, as it stands and in
-// scratch copies with one fault each; and the pack's public subpaths, resolved through the
-// package's own name, with its internal module refused. It packs the dist/ that mise run build
-// writes.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/release.test.ts, with the manifest's
-// dependencies checked.
+// Adapted from spike-html-apps-sdk (df65376): test/unit/release.test.ts, its dependencies checked.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -18,7 +12,6 @@ const root = join(import.meta.dirname, "../..");
 const src = join(root, "src");
 const scratches: string[] = [];
 
-// The public subpaths, which package.json's exports lists: each module an app imports.
 const publics = [
   "./api.js",
   "./auth.js",
@@ -27,21 +20,17 @@ const publics = [
   "./events.js",
   "./events/nats.js",
 ];
-// Node's condition sets, its defaults and the types condition TypeScript adds, with the build file
-// a public subpath's base resolves to under each.
 const conditions: [string[], string][] = [
   [[], ".js"],
   [["--conditions=types"], ".d.ts"],
 ];
 
-/** A new temporary directory, removed after the run. */
 function scratchDir() {
   const scratch = mkdtempSync(join(tmpdir(), "release-"));
   scratches.push(scratch);
   return scratch;
 }
 
-// The pack under test: pnpm pack's tarball, extracted, its package/ directory.
 let pack: string;
 before(() => {
   const scratch = scratchDir();
@@ -54,8 +43,6 @@ after(() => {
   for (const scratch of scratches) rmSync(scratch, { recursive: true, force: true });
 });
 
-/** The pack's manifest as package.json writes it, which a fault changes: every export a flat
- * object of condition targets. */
 interface PackManifest {
   license: string;
   files: string[];
@@ -66,10 +53,8 @@ interface PackManifest {
   devDependencies: Record<string, string>;
 }
 
-/** A fault's change to a scratch copy of the pack, given its directory and its manifest. */
 type Change = (dir: string, manifest: PackManifest) => void;
 
-/** A scratch copy of the pack, `change` applied to it and its manifest, and its problems. */
 function faulted(change: Change) {
   const copy = join(scratchDir(), "package");
   cpSync(pack, copy, { recursive: true });
@@ -108,7 +93,6 @@ describe("release pack", () => {
     }
   });
 
-  // npm prepares a git dependency that has a build script, which the tag's tree must never need.
   test("the packed manifest carries no scripts", () => {
     const packed = JSON.parse(readFileSync(join(pack, "package.json"), "utf8"));
     assert.equal(packed.scripts, undefined);
@@ -137,7 +121,6 @@ describe("release pack", () => {
   const jetstream = "@nats-io/jetstream";
   const tooling = "@standards-lab/web-tooling";
   const toolingRepo = "github:standards-lab/web-tooling";
-  // Each fault: its change, and a problem it must draw.
   const faults: Record<string, [Change, string]> = {
     "a .ts module with no emitted .js": [
       remove("dist/auth.js"),

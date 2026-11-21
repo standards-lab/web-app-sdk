@@ -1,7 +1,5 @@
 // An in-memory EventSequence, the contract's reference implementation: events appended to an array,
-// each read a generator over it that waits for the next append. It is test code, never exported by
-// the package: test/unit/events.test.ts runs the sequence contract against it, and type-checks it
-// with tsc.
+// each read a generator over it that waits for the next append.
 // From spike-html-apps-sdk (df65376): test/unit/memory-sequence.ts.
 
 import { UnknownCursorError } from "@standards-lab/web-app-sdk/events.js";
@@ -24,10 +22,8 @@ export interface MemoryOptions {
  * out (not a position, or past the last event appended) is unknown, and fails the read with an
  * UnknownCursorError. */
 export function memorySequence(events: readonly CloudEvent[] = [], options: MemoryOptions = {}) {
-  // The events kept, oldest first, and the position of the first.
   const kept: CloudEvent[] = [];
   let first = 1;
-  // The wakes of the reads waiting for an append.
   const waiting = new Set<() => void>();
 
   async function append(event: CloudEvent): Promise<void> {
@@ -39,8 +35,6 @@ export function memorySequence(events: readonly CloudEvent[] = [], options: Memo
     for (const wake of waiting) wake();
   }
 
-  /** Resolves on the next append or when `signal` aborts, its wake and listener removed either
-   * way. */
   function appended(signal?: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
       const wake = () => {
@@ -53,8 +47,6 @@ export function memorySequence(events: readonly CloudEvent[] = [], options: Memo
     });
   }
 
-  // The generator's body runs on the first next(), so an unknown cursor rejects the iteration, and a
-  // break's return() ends it at its yield, where no wake is registered.
   async function* read({ after, types, signal }: ReadOptions = {}): AsyncGenerator<Delivery> {
     let next = first;
     if (after !== undefined) {
@@ -65,7 +57,6 @@ export function memorySequence(events: readonly CloudEvent[] = [], options: Memo
       next = position + 1;
     }
     while (!signal?.aborted) {
-      // An event discarded before the read reached it is skipped: the read goes on from the oldest.
       next = Math.max(next, first);
       if (next >= first + kept.length) {
         await appended(signal);

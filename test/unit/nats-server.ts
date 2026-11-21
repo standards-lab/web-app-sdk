@@ -1,9 +1,7 @@
 // The NATS tier's server: the nats-server NATS_SERVER names (mise.toml's pin, which mise run
 // test:unit passes), started with a generated config on the loopback address, its WebSocket
-// listener without TLS, JetStream in a temporary store, and an authorization token. The process
-// management follows @standards-lab/web-tooling/browser.js's launch().
-// Adapted from spike-html-apps-sdk (df65376): test/unit/nats-server.ts, its process management
-// credited to web-tooling's launch().
+// listener without TLS, JetStream in a temporary store, and an authorization token.
+// Adapted from spike-html-apps-sdk (df65376): test/unit/nats-server.ts.
 
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -11,7 +9,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
 
-/** How long a start may take before it fails, and a stop before the server is killed. */
 const patience = 5000;
 
 /** Starts a server that accepts `token`, resolving once it is ready, to its WebSocket URL, its
@@ -21,8 +18,6 @@ export async function startServer({ token }: { token: string }) {
   if (!executable) throw new Error("NATS_SERVER names no nats-server: run mise run test:unit");
   const dir = mkdtempSync(join(tmpdir(), "nats-server."));
   const config = join(dir, "nats.conf");
-  // Port -1 is a free port the server picks; a restart keeps the ones it picked, so a client
-  // reconnects to the same URL.
   const ports = { client: -1, websocket: -1, monitor: -1 };
   const write = () =>
     writeFileSync(
@@ -36,15 +31,11 @@ export async function startServer({ token }: { token: string }) {
       ].join("\n"),
     );
 
-  // Assigned by the first run(), before anything reads them.
   let child!: ChildProcessByStdio<null, null, Readable>;
   let exited!: Promise<number | null>;
-  // A run that ends without stopping the server still ends it.
   const orphan = () => child?.kill("SIGKILL");
   process.once("exit", orphan);
 
-  /** Runs the server on the config, resolving once its log says it is ready, and taking the ports
-   * it listens on from the log. */
   async function run() {
     write();
     child = spawn(executable, ["-c", config], { stdio: ["ignore", "ignore", "pipe"] });
@@ -74,7 +65,6 @@ export async function startServer({ token }: { token: string }) {
     ports.monitor = port(/http monitor on 127\.0\.0\.1:(\d+)/);
   }
 
-  /** Ends the server, by SIGTERM or after the patience by SIGKILL. */
   async function halt() {
     if (child.exitCode !== null || child.signalCode !== null) return;
     child.kill("SIGTERM");
@@ -92,18 +82,13 @@ export async function startServer({ token }: { token: string }) {
   }
 
   return {
-    /** The WebSocket listener's URL. */
     url: `ws://127.0.0.1:${ports.websocket}`,
-    /** The client (TCP) listener's port, which speaks NATS's protocol without WebSocket. */
     clientPort: ports.client,
-    /** The monitoring endpoint's URL. */
     monitor: `http://127.0.0.1:${ports.monitor}`,
-    /** Stops the server and starts it again on the same ports and store. */
     async restart() {
       await halt();
       await run();
     },
-    /** Stops the server and removes its config and store. */
     async stop() {
       process.off("exit", orphan);
       await halt();

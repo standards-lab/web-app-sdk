@@ -1,6 +1,5 @@
-// The application SDK's router, on URLPattern and the Navigation API with no hand-written matcher:
-// it matches each navigation under its base against the route table and mounts the route's
-// element in its outlet.
+// The application SDK's router, on URLPattern and the Navigation API: it matches each navigation
+// under its base against the route table and mounts the route's element in its outlet.
 // From spike-html-apps-sdk (df65376): src/router.ts.
 
 /** Imports the module that defines a route's element and resolves to the element's tag, so the
@@ -72,21 +71,16 @@ export function createRouter(routes: Routes, options: RouterOptions): Router {
   return new AppRouter(routes, options);
 }
 
-/** A navigation's outcome, ready to mount: the route's match and its element, created with its
- * params set; or, for a path nothing matches, the notFound element, or null for an empty outlet. */
 interface Mount {
   match: Match | undefined;
   element: Element | null;
 }
 
-/** The info a navigate() navigation carries, so its navigate event mounts what navigate() loaded
- * rather than loading it again. */
 const preloaded = Symbol("preloaded");
 interface Preloaded {
   [preloaded]: Mount;
 }
 
-/** The base's path, ending in "/": the option, else the <base> element's href, else "/". */
 function baseOf(option: string | undefined): string {
   const element = document.querySelector("base");
   const path =
@@ -94,11 +88,8 @@ function baseOf(option: string | undefined): string {
   return path.endsWith("/") ? path : `${path}/`;
 }
 
-/** The text escaped so URLPattern reads each of its characters as itself. */
 const literal = (text: string) => text.replace(/[\\:*?+(){}]/g, "\\$&");
 
-/** The tag, defined, that a route's entry names or its loader resolves to; rejects when the loader
- * does, or when the tag isn't a defined custom element. */
 async function defined(entry: string | Loader): Promise<string> {
   const tag = typeof entry === "string" ? entry : await entry();
   if (!customElements.get(tag)) throw new Error(`<${tag}> is not a defined custom element`);
@@ -112,12 +103,8 @@ class AppRouter extends EventTarget implements Router {
   readonly #error: string | Loader | undefined;
   readonly #table: { pattern: string; entry: string | Loader; matcher: URLPattern }[];
   #current: Match | undefined;
-  // The pathname whose route or notFound element is mounted: a navigation that keeps it changes
-  // only the query. Undefined before the first mount and after a failed one, so either mounts.
   #mountedPath: string | undefined;
   #started = false;
-  // Each mount takes the next turn and commits only while it is the latest, so a slow loader never
-  // overwrites a later navigation's element.
   #turn = 0;
 
   constructor(routes: Routes, options: RouterOptions) {
@@ -157,10 +144,8 @@ class AppRouter extends EventTarget implements Router {
   }
 
   async navigate(path: string, options: NavigateOptions = {}): Promise<void> {
-    // Unstarted, nothing would intercept the navigation, and the browser would load the page.
     if (!this.#started) throw new Error("the router isn't started: call start() first");
     const url = new URL(path.replace(/^\/+/, ""), new URL(this.#base, location.origin));
-    // A destination at the mounted pathname changes only the query, which loads nothing.
     const info: Preloaded | undefined =
       url.pathname === this.#mountedPath ? undefined : { [preloaded]: await this.#prepare(url) };
     const history = options.replace ? "replace" : "push";
@@ -181,8 +166,6 @@ class AppRouter extends EventTarget implements Router {
     await navigation.navigate(url.href, { history }).finished;
   }
 
-  /** Intercepts the navigation when it is the router's: same-origin, under the base, and neither a
-   * download, a fragment-only change, a form post, nor a reload. */
   #onNavigate = (event: NavigateEvent) => {
     const url = new URL(event.destination.url);
     if (
@@ -190,7 +173,6 @@ class AppRouter extends EventTarget implements Router {
       event.hashChange ||
       event.downloadRequest !== null ||
       event.formData !== null ||
-      // A reload reloads the page, which starts its router again.
       event.navigationType === "reload" ||
       url.origin !== location.origin ||
       !url.pathname.startsWith(this.#base)
@@ -199,7 +181,6 @@ class AppRouter extends EventTarget implements Router {
     }
     const turn = ++this.#turn;
     if (url.pathname === this.#mountedPath) {
-      // Only the query changes: the element stays, and so do focus and scroll.
       event.intercept({
         focusReset: "manual",
         scroll: "manual",
@@ -218,8 +199,6 @@ class AppRouter extends EventTarget implements Router {
           const mount = info?.[preloaded] ?? (await this.#prepare(url));
           if (turn === this.#turn) this.#commit(mount, url.pathname);
         } catch (error) {
-          // The URL is already committed: the error element stands in for the route, and the
-          // rejection fails the navigation (navigateerror).
           if (turn === this.#turn) await this.#fail(turn);
           throw error;
         }
@@ -227,7 +206,6 @@ class AppRouter extends EventTarget implements Router {
     });
   };
 
-  /** The route the URL matches, loaded and its element created; rejects when the route fails. */
   async #prepare(url: URL): Promise<Mount> {
     const { pathname, searchParams: query } = url;
     const route = pathname.startsWith(this.#base)
@@ -238,8 +216,6 @@ class AppRouter extends EventTarget implements Router {
       return { match: undefined, element };
     }
     const groups = route.matcher.exec({ pathname })?.pathname.groups ?? {};
-    // The named groups alone: an unnamed group's key is its index, never an attribute's name, and
-    // an optional group that didn't match is undefined.
     const params: Record<string, string> = {};
     for (const [name, value] of Object.entries(groups)) {
       if (value !== undefined && !/^\d+$/.test(name)) params[name] = value;
@@ -250,7 +226,6 @@ class AppRouter extends EventTarget implements Router {
     return { match: { pattern: route.pattern, tag, params, query }, element };
   }
 
-  /** Mounts the outcome as the location's at `path`, and dispatches change. */
   #commit({ match, element }: Mount, path: string) {
     this.#outlet.replaceChildren(...(element ? [element] : []));
     this.#current = match;
@@ -258,16 +233,12 @@ class AppRouter extends EventTarget implements Router {
     this.dispatchEvent(new Event("change"));
   }
 
-  /** Mounts the error element, or empties the outlet when there is none or it fails too, and
-   * dispatches change, current undefined; unless a later turn has begun meanwhile. */
   async #fail(turn: number) {
     let element: Element | null = null;
     if (this.#error) {
       try {
         element = document.createElement(await defined(this.#error));
-      } catch {
-        // The error element failing too leaves the outlet empty.
-      }
+      } catch {}
     }
     if (turn !== this.#turn) return;
     this.#outlet.replaceChildren(...(element ? [element] : []));

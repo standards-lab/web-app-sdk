@@ -1,7 +1,5 @@
 // A sample domain service, as an app's domains tier writes one: a stateless object over the Client,
-// one endpoint per route, checked against Service with `satisfies`. It is test code, never
-// exported by the package: test/unit/api.test.ts runs it against a loopback server, and
-// type-checks it with tsc.
+// one endpoint per route, checked against Service with `satisfies`.
 // From spike-html-apps-sdk (df65376): test/unit/documents.ts.
 
 import type { Client, Page } from "@standards-lab/web-app-sdk/api.js";

@@ -3,8 +3,7 @@
 // manifest declares, and its dependencies: none at run time, the NATS adapter's packages optional
 // peers, and the tooling a devDependency at its release tag. test/unit/release.test.ts runs it on
 // a pnpm pack.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/release.ts, with the manifest's
-// dependencies checked.
+// Adapted from spike-html-apps-sdk (df65376): test/unit/release.ts, its dependencies checked.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -39,16 +38,12 @@ export function listFiles(dir: string): string[] {
     .sort();
 }
 
-/** A key's or target's parts around its one *, or undefined when it holds none. */
 function star(pattern: string): { prefix: string; suffix: string } | undefined {
   const at = pattern.indexOf("*");
   return at < 0 ? undefined : { prefix: pattern.slice(0, at), suffix: pattern.slice(at + 1) };
 }
 
-// Node's condition sets: its defaults, and with types, the condition TypeScript adds.
 const conditionSets: string[][] = [[], ["--conditions=types"]];
-// Each specifier in argv resolved as the package's own import: its URL, or the code of the error
-// with which Node refuses it.
 const resolveArgs = `console.log(JSON.stringify(process.argv.slice(1).map((specifier) => {
   try { return { url: import.meta.resolve(specifier) }; } catch (error) { return { code: error.code }; }
 })));`;
@@ -66,7 +61,6 @@ export function resolveSelf(
   const { name } = readManifest(root);
   const specifiers = subpaths.map((subpath) => name + subpath.slice(1));
   const args = [...conditions, "--input-type=module", "-e", resolveArgs, ...specifiers];
-  // The script's output: per specifier, the URL Node resolves it to or the error code it gives.
   const results = JSON.parse(
     execFileSync(process.execPath, args, { cwd: root, encoding: "utf8" }),
   ) as { url?: string; code?: string }[];
@@ -77,8 +71,6 @@ export function resolveSelf(
   );
 }
 
-/** The paths, relative to root, that Node resolves each subpath of the package at root to under
- * any condition set, by self-reference, as { subpath: Set }; none where Node refuses it. */
 function resolveSubpaths(root: string, subpaths: string[]): Record<string, Set<string>> {
   const resolved = Object.fromEntries(subpaths.map((subpath) => [subpath, new Set<string>()]));
   for (const conditions of conditionSets) {
@@ -100,10 +92,8 @@ export function builtFrom(source: string): string[] {
   return [];
 }
 
-/** The files every pack carries whatever package.json's files lists. */
 const always = ["LICENSE", "README.md", "package.json"];
 
-/** The license every release declares, and the text its LICENSE opens with. */
 const license = "Apache-2.0";
 const licenseHeading = /^\s*Apache License\s+Version 2\.0, January 2004\s/;
 
@@ -123,16 +113,10 @@ export function licenseProblems(root: string): string[] {
   return problems;
 }
 
-/** The NATS adapter's packages, the release's only peers: each optional, so an app that never
- * imports the adapter installs neither, and each by a caret range, which the repository's own
- * install of it, a devDependency at one exact version, falls within. */
 const natsPackages = ["@nats-io/nats-core", "@nats-io/jetstream"];
 const caretRange = /^\^\d+\.\d+\.\d+$/;
 const exactVersion = /^\d+\.\d+\.\d+$/;
 
-/** The tooling, the one devDependency from GitHub: at one release tag, never a range, a branch, a
- * commit, or a #semver: spec, which bun fails. Which version, range, and tag is package.json's, and
- * mise run currency reports each behind its latest. */
 const tooling = "@standards-lab/web-tooling";
 const toolingTag = /^github:standards-lab\/web-tooling#v\d+\.\d+\.\d+$/;
 
@@ -213,7 +197,6 @@ export function releaseProblems(root: string, src: string, publics: string[]): s
   const built = packed.filter((path) => path.startsWith("dist/"));
   const builtSet = new Set(built);
 
-  // The pack is the build and the files every pack carries, and nothing else.
   if (!packed.includes("README.md")) problems.push("the pack has no README.md");
   for (const path of packed) {
     if (!path.startsWith("dist/") && !always.includes(path)) {
@@ -221,7 +204,6 @@ export function releaseProblems(root: string, src: string, publics: string[]): s
     }
   }
 
-  // The build against the sources: each source's emit or copy is there, and nothing else is.
   const expected = new Set<string>();
   for (const source of listFiles(src)) {
     const outputs = builtFrom(source);
@@ -235,7 +217,6 @@ export function releaseProblems(root: string, src: string, publics: string[]): s
     if (!expected.has(path)) problems.push(`${path} is built from no source`);
   }
 
-  // files ships the build: each built file lies under an entry of files.
   const shipped = (path: string) =>
     files.some(
       (entry) =>
@@ -245,8 +226,6 @@ export function releaseProblems(root: string, src: string, publics: string[]): s
     if (!shipped(path)) problems.push(`${path} isn't under package.json's files`);
   }
 
-  // exports lists the public subpaths, each with a types and a default condition, and nothing
-  // else: no pattern, which would reach an internal module too.
   for (const subpath of publics) {
     if (!(subpath in exports)) problems.push(`exports has no "${subpath}"`);
   }
@@ -258,11 +237,6 @@ export function releaseProblems(root: string, src: string, publics: string[]): s
     }
   }
 
-  // exports: every entry a target or a flat object of condition targets, or null, which excludes
-  // its subpath; every public module's built file reached through an export as Node resolves it,
-  // and no internal module's subpath resolved at all; every pattern key reaching a built file; and
-  // every target Node resolves an export to built. The subpaths judged are the exact keys, each
-  // built file's subpath through a pattern target that matches it, and each internal module's.
   const subpaths = new Set<string>();
   const origins: { key: string; subpath: string; path: string }[] = [];
   for (const [key, entry] of Object.entries(exports)) {
