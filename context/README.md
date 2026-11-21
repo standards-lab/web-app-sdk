@@ -34,4 +34,5 @@ web-components' at a659353. The files with no line have their provenance here:
 - **API client** (built): [src/api.ts](../src/api.ts).
 - **Tokens** (built): [src/auth.ts](../src/auth.ts).
 - **Domain services** (built): [src/service.ts](../src/service.ts).
-- **Events** (built): [src/events.ts](../src/events.ts) and [src/events/nats.ts](../src/events/nats.ts).
+- **Events** (built): [src/events.ts](../src/events.ts) and
+  [src/events/nats.ts](../src/events/nats.ts).
