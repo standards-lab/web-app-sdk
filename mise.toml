@@ -1,6 +1,7 @@
 # The SDK's tools and tasks.
 # See docs/development.md
-# Adapted from spike-html-apps-sdk (df65376): mise.toml, its browser at web-components' pin.
+# Adapted from spike-html-apps-sdk (df65376): mise.toml, its browser pin replaced.
+# Adapted from web-components (a659353): mise.toml, its chrome-headless-shell pin.
 [settings]
 task.run_auto_install = false
 
