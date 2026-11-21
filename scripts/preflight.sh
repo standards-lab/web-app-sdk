@@ -20,7 +20,7 @@ require_node_modules() {
   done
 }
 
-require_nats_server() {
+require_nats_server_at_pin() {
   local server pin version
   server=$(mise which nats-server 2>/dev/null) || fail "nats-server"
   pin=$(mise current nats-server) || return
@@ -31,7 +31,7 @@ require_nats_server() {
   fi
 }
 
-require_browser_at_its_checksum_pin() {
+require_browser_at_pin() {
   local shell pin version
   shell=$(mise which chrome-headless-shell 2>/dev/null) || fail "chrome-headless-shell"
   pin=$(mise current http:chrome-headless-shell) || return
@@ -44,6 +44,6 @@ require_browser_at_its_checksum_pin() {
 
 require_node_modules
 case "${1:-}" in
-  nats) require_nats_server ;;
-  browser) require_browser_at_its_checksum_pin ;;
+  nats) require_nats_server_at_pin ;;
+  browser) require_browser_at_pin ;;
 esac

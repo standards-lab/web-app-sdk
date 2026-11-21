@@ -46,9 +46,9 @@ with URLPattern, with no matcher of its own.
   nothing would intercept the navigation, and the browser would load the page, so it throws.
 - **Left to the browser.** A reload reloads the page, which starts its router again; a download, a
   fragment-only change, and a form post are the browser's too.
-- **Failures.** On a navigation the router didn't start, the URL is already committed: the error
-  element stands in for the route, and the rejection fails the navigation (navigateerror). The
-  error element failing too leaves the outlet empty.
+- **Failures.** When an intercepted navigation's route fails, the URL is already committed: the
+  error element stands in for the route, and the rejection fails the navigation (navigateerror).
+  The error element failing too leaves the outlet empty.
 - **Params.** Only named groups become params: an unnamed group's key is its index, never an
   attribute's name, and an optional group that didn't match is undefined.
 

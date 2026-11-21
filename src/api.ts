@@ -456,9 +456,7 @@ async function problem(response: Response): Promise<Problem> {
     let document: unknown;
     try {
       document = JSON.parse(await response.text());
-    } catch {
-      document = undefined;
-    }
+    } catch {}
     if (typeof document === "object" && document !== null && !Array.isArray(document)) {
       const members = document as Record<string, unknown>;
       return {

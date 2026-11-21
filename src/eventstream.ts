@@ -1,7 +1,7 @@
 // The application SDK's event-stream parser: the bytes of a text/event-stream body to the events it
 // dispatches, by the WHATWG HTML standard's "Parsing an event stream" and "Interpreting an event
-// stream" (§9.2.5–9.2.6). It is internal: the client's stream reads a
-// response through it, and package.json's exports leave it out.
+// stream" (§9.2.5–9.2.6). It is internal: the client's stream reads a response through it, and
+// package.json's exports leave it out.
 // From spike-html-apps-sdk (df65376): src/eventstream.ts.
 
 import type { ServerSentEvent } from "./api.ts";

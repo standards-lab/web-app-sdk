@@ -45,7 +45,7 @@ description = "Shellcheck the scripts"
 run = "shellcheck scripts/*.sh"
 
 [tasks."lint:workflows"]
-description = "Lint the GitHub Actions workflows with actionlint"
+description = "Lint the GitHub Actions workflows with actionlint, which shellchecks each run: block with the pinned shellcheck"
 run = "actionlint"
 
 [tasks."lint:context"]

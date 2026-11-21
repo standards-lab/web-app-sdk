@@ -238,9 +238,7 @@ class AppRouter extends EventTarget implements Router {
     if (this.#error) {
       try {
         element = document.createElement(await defined(this.#error));
-      } catch {
-        element = null;
-      }
+      } catch {}
     }
     if (turn !== this.#turn) return;
     this.#outlet.replaceChildren(...(element ? [element] : []));
