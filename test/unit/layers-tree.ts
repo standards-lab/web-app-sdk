@@ -1,8 +1,7 @@
 // The layer's import cases as one file tree in the repository's shape: a file per forbidden import
 // and form, each with the rules that catch it, and the imports the layer may make in the same
 // layout. layers.test.ts lints it.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/layers-tree.ts, its other layers the stack's
-// web-foundation and web-components, and the template above them, web-app-sdk-template.
+// Adapted from spike-html-apps-sdk (df65376): test/unit/layers-tree.ts, for the SDK's layer.
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
@@ -16,20 +15,15 @@ const root = join(import.meta.dirname, "../..");
 export const manifest = readManifest(root);
 const sdk = manifest.name;
 
-/** The stack's other layers, web-foundation and web-components, and the template above every
- * layer, web-app-sdk-template, which the SDK never imports. */
 const siblings = ["foundation", "components"].map((layer) => sdk.replace(/app-sdk$/, layer));
 const app = `${sdk}-template`;
 
-// The rules a case names: the layer table and the two manifest rules.
 export const table = "boundaries/dependencies";
 export const extraneous = "import-x/no-extraneous-dependencies";
 export const relativePackages = "import-x/no-relative-packages";
 /** The rules the lint flags the tree with, no-unresolved among them, which no case may draw. */
 export const watched = [table, extraneous, relativePackages, "import-x/no-unresolved"];
 
-/** An edge in each of the four import forms, one file per form, each named for the edge and its
- * form: a side-effect import, a type import, a re-export, and an import(). */
 function forms(base: string, specifier: string): Record<string, string> {
   return {
     [`${base}.ts`]: `import "${specifier}";`,
@@ -45,17 +39,14 @@ export interface Case {
   rules: string[];
 }
 
-/** `files`, each path to its source and the rules that flag it, sorted. */
 function by(rules: string[], files: Record<string, string>): Record<string, Case> {
   return Object.fromEntries(
     Object.entries(files).map(([path, source]) => [path, { source, rules: [...rules].sort() }]),
   );
 }
 
-// Each file holds one import, named for what it imports.
+/** The forbidden imports, a file each, named for what it imports. */
 export const violations = {
-  // Any package by name: the manifest declares no dependency, and the table allows no package. A
-  // devDependency ships nothing.
   ...by([table, extraneous], {
     "src/lit.ts": `import { html } from "lit";`,
     ...forms("src/forms/lit", "lit"),
@@ -64,28 +55,19 @@ export const violations = {
     "src/app.ts": `import { define } from "${app}/main.js";`,
     ...forms("src/forms/typescript", "typescript"),
   }),
-  // The package's own name, which resolves to its build, not its src/: the table alone catches it,
-  // since no-extraneous-dependencies (from eslint-plugin-import-x 4.18.0) passes a self-import in a
-  // package whose manifest has an exports field, as Node resolves one.
   ...by([table], forms("src/forms/self-name", `${sdk}/auth.js`)),
-  // The NATS adapter's packages from any file but the adapter: the manifest declares them, as
-  // optional peer dependencies, but the table allows them to the adapter alone.
   ...by([table], {
     ...forms("src/forms/nats-core", "@nats-io/nats-core"),
     ...forms("src/forms/jetstream", "@nats-io/jetstream"),
     "src/events/nats-sibling.ts": `import { jetstream } from "@nats-io/jetstream";`,
   }),
-  // The adapter from another module of the layer, which would load its packages with it.
   ...by([table], {
     ...forms("src/forms/adapter", "./../events/nats.ts"),
     "src/events/adapter-value.ts": `import { natsSequence } from "./nats.ts";`,
   }),
-  // A package by a relative path into node_modules/.
   ...by([table, relativePackages], {
     "src/lit-path.ts": `import "../node_modules/lit/index.js";`,
   }),
-  // A value import of a declaration file, in each value form, an inline `type` specifier among
-  // them, since verbatimModuleSyntax keeps that import.
   ...by([table], {
     "src/declared-value.ts": `import { createClient } from "./declared.js";`,
     "src/declared-side-effect.ts": `import "./declared.js";`,
@@ -101,8 +83,8 @@ export const violations = {
 export const sources = (cases: Record<string, Case>): Record<string, string> =>
   Object.fromEntries(Object.entries(cases).map(([path, { source }]) => [path, source]));
 
-// Every import the layer may make, in each form, with names that hold dots, which a rule must tell
-// from . and .. segments.
+/** Every import the layer may make, in each form, with names that hold dots, which a rule must tell
+ * from . and .. segments. */
 export const allowed = {
   "src/api.ts": `export { anonymous } from "./auth.ts";`,
   "src/nested/own.ts": `import type { X } from "../api.ts";\nawait import("../api.ts");`,
@@ -112,7 +94,6 @@ export const allowed = {
   "src/declared-export-type.ts": `export type { Result } from "./declared.js";`,
   "src/declared-typeof.ts": `import type { createClient } from "./declared.js";\nexport type F = typeof createClient;`,
   "src/declared-export-all-type.ts": `export type * from "./declared.js";`,
-  // The adapter, which may import its packages, in each form, and what the layer may.
   "src/events/nats.ts": [
     `import { html } from "@nats-io/nats-core";`,
     `import type { X } from "@nats-io/jetstream";`,
@@ -122,8 +103,6 @@ export const allowed = {
   ].join("\n"),
 };
 
-/** The files the cases import that no case is: the modules, the declaration, and the package's
- * build, which its own name resolves to. */
 const targets = {
   "src/auth.ts": "export const anonymous = {};",
   "src/index.ts": "export {};",
@@ -138,9 +117,6 @@ const targets = {
   "dist/auth.d.ts": "export interface X {}",
 };
 
-/** The packages the cases name, as stubs in node_modules/: lit, the siblings, the app,
- * typescript, a devDependency, and the NATS adapter's peer dependencies, each a module and its
- * types at every subpath. */
 const externals = [
   "lit",
   ...siblings,

@@ -1,6 +1,5 @@
+# The check on each pull request to main and each push to it.
 # Adapted from web-components (a659353): .github/workflows/ci.yml.
-# mise run install installs every pin mise.toml names, the nats-server and chrome-headless-shell
-# the tests run included, and node_modules, the tooling at its release tag.
 
 name: CI
 

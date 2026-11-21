@@ -10,8 +10,8 @@ export interface TokenProvider {
   refresh(): Promise<string | undefined>;
 }
 
-/** The default provider: no token, and nothing to refresh, so every call goes anonymous. */
-// Frozen, since every client that takes the default shares it.
+/** The default provider, frozen and shared by every client that takes it: no token, and nothing
+ * to refresh, so every call goes anonymous. */
 export const anonymous: TokenProvider = Object.freeze({
   token: async () => undefined,
   refresh: async () => undefined,

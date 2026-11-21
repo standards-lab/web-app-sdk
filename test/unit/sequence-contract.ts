@@ -1,7 +1,7 @@
 // The EventSequence contract as a suite any implementation runs: src/events.ts's semantics, each a
 // test against a sequence a factory makes. test/unit/events.test.ts runs it against the in-memory
 // sequence; an adapter's suite runs it against the adapter, over a live server. Every test has a
-// timeout, so a read that hangs, never delivering or never ending, fails rather than stalls.
+// timeout.
 // Adapted from spike-html-apps-sdk (df65376): test/unit/sequence-contract.ts, its take exported.
 
 import assert from "node:assert/strict";
@@ -11,9 +11,7 @@ import { describe, test } from "node:test";
 import { UnknownCursorError } from "@standards-lab/web-app-sdk/events.js";
 import type { CloudEvent, Cursor, EventSequence } from "@standards-lab/web-app-sdk/events.js";
 
-/** How long a test may run before it fails as a hang. */
 const timeout = 5000;
-/** How long a test waits before an append, so the read it races is waiting when it lands. */
 const settle = 50;
 
 /** A CloudEvent numbered `n`, of `type`. Every event carries data and an extension attribute, so a
@@ -69,7 +67,6 @@ export async function take<T>(iterable: AsyncIterable<T>, count: number): Promis
   return deliveries;
 }
 
-/** The events of `deliveries`. */
 const eventsOf = (deliveries: readonly { event: CloudEvent }[]) =>
   deliveries.map(({ event }) => event);
 
@@ -97,7 +94,6 @@ export type Factory = (events: CloudEvent[], options: ContractOptions) => Made |
  * oldest discarded past it.
  */
 export function sequenceContract(name: string, factory: Factory): void {
-  /** Runs `body` over a fresh sequence, closing it afterwards whether `body` passes or not. */
   async function using(
     events: CloudEvent[],
     options: ContractOptions,
@@ -141,7 +137,6 @@ export function sequenceContract(name: string, factory: Factory): void {
             eventsOf([...first, ...second, ...third]),
             [1, 2, 3, 4, 5].map((n) => cloudEvent(n)),
           );
-          // The same cursor resumes at the same place each time.
           const again = await take(sequence.read({ after: first[1].cursor }), 1);
           assert.deepEqual(eventsOf(again), [cloudEvent(3)]);
         },
@@ -159,7 +154,6 @@ export function sequenceContract(name: string, factory: Factory): void {
       return using(events, {}, async ({ sequence }) => {
         const deliveries = await take(sequence.read({ types: ["lab.test.a", "lab.test.c"] }), 3);
         assert.deepEqual(eventsOf(deliveries), [events[0], events[4], events[5]]);
-        // A filtered read resumes after its last delivery, still filtered.
         const resumed = await take(
           sequence.read({ after: deliveries[0].cursor, types: ["lab.test.a"] }),
           1,
@@ -193,7 +187,6 @@ export function sequenceContract(name: string, factory: Factory): void {
         await delay(settle);
         controller.abort();
         assert.deepEqual(await next, { done: true, value: undefined });
-        // The ended read delivers nothing appended after it.
         await append(cloudEvent(2));
         assert.equal((await deliveries.next()).done, true);
       }));
@@ -238,7 +231,6 @@ export function sequenceContract(name: string, factory: Factory): void {
             eventsOf(deliveries),
             [2, 3].map((n) => cloudEvent(n)),
           );
-          // A cursor whose event is no longer kept resumes at the oldest kept.
           await append(cloudEvent(4));
           await append(cloudEvent(5));
           const resumed = await take(sequence.read({ after: deliveries[0].cursor }), 1);
@@ -255,8 +247,6 @@ export function sequenceContract(name: string, factory: Factory): void {
       }));
 
     test("a cursor past the last event fails the read as unknown, and one at it waits for the next", async () => {
-      // A cursor well-formed for the sequence, from another holding more events: the third event's,
-      // which a sequence of one never gave out.
       let past: Cursor | undefined;
       await using(
         [1, 2, 3].map((n) => cloudEvent(n)),

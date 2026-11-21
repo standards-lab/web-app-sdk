@@ -1,8 +1,7 @@
 // The application SDK's event-stream parser: the bytes of a text/event-stream body to the events it
 // dispatches, by the WHATWG HTML standard's "Parsing an event stream" and "Interpreting an event
-// stream" (§9.2.5–9.2.6), written here so the SDK takes no dependency for it. It is internal: the
-// client's stream reads a response through it, and an app reads the events stream resolves to,
-// never this module, which package.json's exports leaves out.
+// stream" (§9.2.5–9.2.6). It is internal: the client's stream reads a
+// response through it, and package.json's exports leave it out.
 // From spike-html-apps-sdk (df65376): src/eventstream.ts.
 
 import type { ServerSentEvent } from "./api.ts";
@@ -16,14 +15,10 @@ import type { ServerSentEvent } from "./api.ts";
  * ignored, and the last id set carries to every later event, as an EventSource's lastEventId does,
  * until an `id` with an empty value clears it. */
 export class EventStreamParser {
-  // ignoreBOM keeps the BOM in the text, so the parser strips it itself, as the standard says.
   #decoder = new TextDecoder("utf-8", { ignoreBOM: true });
-  // Whether any text has arrived, so a BOM is stripped only at the stream's start.
-  #started = false;
-  // The text after the last line end, a line not yet ended.
-  #line = "";
-  // Whether the last text ended with CR, so an LF that begins the next is that CRLF's end.
-  #cr = false;
+  #textArrived = false;
+  #unendedLine = "";
+  #endedWithCR = false;
   #type = "";
   #data = "";
   #id = "";
@@ -42,7 +37,7 @@ export class EventStreamParser {
    * line end in that last text completes. */
   end(): ServerSentEvent[] {
     const events = this.#text(this.#decoder.decode());
-    this.#line = "";
+    this.#unendedLine = "";
     this.#type = "";
     this.#data = "";
     return events;
@@ -50,32 +45,31 @@ export class EventStreamParser {
 
   #text(chunk: string): ServerSentEvent[] {
     let text = chunk;
-    if (!this.#started && text.length > 0) {
-      this.#started = true;
+    if (!this.#textArrived && text.length > 0) {
+      this.#textArrived = true;
       if (text.startsWith("\uFEFF")) text = text.slice(1);
     }
     if (text.length > 0) {
-      if (this.#cr && text.startsWith("\n")) text = text.slice(1);
-      this.#cr = false;
+      if (this.#endedWithCR && text.startsWith("\n")) text = text.slice(1);
+      this.#endedWithCR = false;
     }
     const events: ServerSentEvent[] = [];
     let start = 0;
     for (let i = 0; i < text.length; i++) {
       const c = text[i];
       if (c !== "\r" && c !== "\n") continue;
-      this.#field(this.#line + text.slice(start, i), events);
-      this.#line = "";
+      this.#field(this.#unendedLine + text.slice(start, i), events);
+      this.#unendedLine = "";
       if (c === "\r") {
-        if (i + 1 === text.length) this.#cr = true;
+        if (i + 1 === text.length) this.#endedWithCR = true;
         else if (text[i + 1] === "\n") i++;
       }
       start = i + 1;
     }
-    this.#line += text.slice(start);
+    this.#unendedLine += text.slice(start);
     return events;
   }
 
-  /** One line: a blank line dispatches, a comment is ignored, and any other sets its field. */
   #field(line: string, events: ServerSentEvent[]): void {
     if (line === "") {
       this.#dispatch(events);
@@ -99,12 +93,9 @@ export class EventStreamParser {
       case "retry":
         if (/^[0-9]+$/.test(value)) this.retry = Number(value);
         break;
-      // Any other field is ignored.
     }
   }
 
-  /** The event the fields built, unless its data is empty, and the buffers reset for the next. The
-   * last id isn't reset: it carries. */
   #dispatch(events: ServerSentEvent[]): void {
     if (this.#data !== "") {
       const event: ServerSentEvent = {

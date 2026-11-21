@@ -1,8 +1,3 @@
-// The NATS adapter as a consumer imports it, the package's ./events/nats.js export over the dist/
-// mise run build wrote, against a real nats-server (test/unit/nats-server.ts) over WebSocket: the
-// sequence contract, its token and refresh, its decoding of go-messaging's binary content mode, a
-// server restart mid-read and a new read from a stored cursor after one, and the package's other
-// subpaths loading without the @nats-io packages.
 // Adapted from spike-html-apps-sdk (df65376): test/unit/nats.test.ts, its take from the contract.
 
 import assert from "node:assert/strict";
@@ -36,9 +31,7 @@ import {
 
 const root = join(import.meta.dirname, "../..");
 const secret = "nats-tier-token";
-/** A provider of the server's token. */
 const authorized = { token: async () => secret, refresh: async () => secret };
-/** The subjects every test's stream captures: each event type the tier publishes is under lab. */
 const subjects = ["lab.>"];
 
 let server: NatsServer;
@@ -58,13 +51,6 @@ after(async () => {
 
 const encoder = new TextEncoder();
 
-/** Publishes `event` as go-messaging nats/v0.2.0 does (nats/broker.go's Publish, over go-core
- * v0.10.0's event/codec.go Encode): the subject the event's type, the context attributes as ce-*
- * headers (time written as the event has it, which Encode would write in UTC with nanoseconds),
- * datacontenttype as content-type, each extension as ce-<name>, Nats-Msg-Id its msgID, the
- * source's length in bytes, ":", the source, and the id, and the body the data's bytes: `body`
- * when given, else data JSON-encoded for a JSON type, a string's UTF-8, or a Uint8Array itself.
- * Resolves once the stream holds it. */
 async function publish(event: CloudEvent, body?: string | Uint8Array) {
   const h = headers();
   const attributes = [
@@ -93,14 +79,11 @@ async function publish(event: CloudEvent, body?: string | Uint8Array) {
 }
 
 let streams = 0;
-/** How a fresh stream is made: `keep`, its max_msgs, and the sequence's token provider. */
 interface FreshOptions {
   keep?: number;
   token?: TokenProvider;
 }
 
-/** A fresh stream holding `events`, `keep` its max_msgs, and the sequence over it; close() closes
- * the sequence and deletes the stream, whose subjects the next test's stream takes. */
 async function fresh(events: CloudEvent[], { keep, token = authorized }: FreshOptions = {}) {
   const stream = `TIER${++streams}`;
   await jsm.streams.add({ name: stream, subjects, max_msgs: keep ?? -1 });
@@ -117,7 +100,6 @@ async function fresh(events: CloudEvent[], { keep, token = authorized }: FreshOp
   };
 }
 
-/** Runs `body` over a fresh stream, closing it afterwards. */
 async function using(
   events: CloudEvent[],
   options: FreshOptions,
@@ -142,7 +124,6 @@ describe("the NATS sequence's connection", { timeout: 15000 }, () => {
         const connz: { connections: { type: string }[] } = await (
           await fetch(`${server.monitor}/connz`)
         ).json();
-        // The publisher's and the adapter's.
         assert.deepEqual(
           connz.connections.map(({ type }) => type),
           ["websocket", "websocket"],
@@ -202,7 +183,6 @@ describe("the NATS sequence's connection", { timeout: 15000 }, () => {
       const next = deliveries.next();
       await sequence.close();
       assert.deepEqual(await next, { done: true, value: undefined });
-      // From no cursor and from one the sequence gave out: neither fails as an unknown cursor.
       for (const after of [undefined, first.value?.cursor]) {
         await assert.rejects(
           take(sequence.read({ after }), 1),
@@ -261,7 +241,6 @@ describe("the NATS sequence's connection", { timeout: 15000 }, () => {
 describe("the NATS sequence's decoding", { timeout: 15000 }, () => {
   const base = { specversion: "1.0", source: "/test/decoding", type: "lab.test.decoded" } as const;
   const bytes = new Uint8Array([0, 1, 2, 254, 255]);
-  // Each case: its name, and the attributes and data its event carries beside base's.
   const cases: [string, Partial<CloudEvent>][] = [
     ["JSON", { datacontenttype: "application/json", data: { a: [1, "two", null] } }],
     ["+json", { datacontenttype: "application/vnd.lab.result+json", data: { ok: true } }],
@@ -366,8 +345,6 @@ describe("the NATS sequence's decoding", { timeout: 15000 }, () => {
 });
 
 describe("the NATS sequence across a server restart", { timeout: 30000 }, () => {
-  /** Restarts the server on the same store, resolving once the publisher has reconnected, as the
-   * adapter does (nats-core's default, every 2 s), so a test appends after it. */
   async function restart() {
     const reconnected = (async () => {
       for await (const status of publisher.status()) if (status.type === "reconnect") return;
@@ -403,8 +380,6 @@ describe("the NATS sequence across a server restart", { timeout: 30000 }, () => 
       [1, 2, 3].map((n) => cloudEvent(n)),
       {},
       async ({ stream, sequence, append }) => {
-        // An app reads two events, stores the last cursor, and reloads: its read and its sequence
-        // end before the restart, and a new sequence reads from the stored cursor after it.
         const before = await take(sequence.read(), 2);
         const stored = before[1].cursor;
         await sequence.close();
@@ -420,8 +395,6 @@ describe("the NATS sequence across a server restart", { timeout: 30000 }, () => 
             seen,
             [3, 4, 5].map((n) => ({ event: cloudEvent(n), cursor: String(n) })),
           );
-          // Nothing follows the last event the stream holds until another is appended: no
-          // duplicate of one already delivered.
           const next = deliveries.next();
           assert.equal(await Promise.race([next, delay(200).then(() => "waiting")]), "waiting");
           await append(cloudEvent(6));
@@ -436,8 +409,6 @@ describe("the NATS sequence across a server restart", { timeout: 30000 }, () => 
 
 describe("the optional peer dependencies", () => {
   test("every subpath but ./events/nats.js loads without the @nats-io packages", () => {
-    // A copy of the package in a scratch node_modules/ with no @nats-io, so nothing resolves them
-    // (a link would resolve from the repository, whose node_modules/ holds them).
     const scratch = mkdtempSync(join(tmpdir(), "peers-"));
     try {
       const pkg = join(scratch, "node_modules/@standards-lab/web-app-sdk");

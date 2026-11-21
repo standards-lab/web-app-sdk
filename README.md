@@ -108,6 +108,11 @@ runs the router and the upload in the pinned `chrome-headless-shell`, on the dri
 The check lints with ESLint, Prettier, shellcheck, and actionlint. CI runs `mise run install` and
 the check on each pull request to main and each push to it.
 
+[docs/development.md](https://github.com/standards-lab/web-app-sdk/blob/main/docs/development.md)
+holds the reasoning behind the configuration and the tests, and
+[docs/internals.md](https://github.com/standards-lab/web-app-sdk/blob/main/docs/internals.md)
+behind the runtime's implementation.
+
 ## Release
 
 A release is an annotated `v<version>` tag on a pack commit: a commit, on no branch, whose tree is

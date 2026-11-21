@@ -1,8 +1,4 @@
-// The router from the package's dist/, on test/fixtures/router.html, driven with real clicks and
-// history traversals through the DevTools Protocol: its base, the navigations it intercepts and the
-// ones it leaves to the browser, its params, query, notFound, and failing routes, and stop().
-// Adapted from spike-html-apps-sdk (df65376): test/browser/router.test.ts, on
-// @standards-lab/web-tooling.
+// Adapted from spike-html-apps-sdk (df65376): test/browser/router.test.ts, on web-tooling.
 
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -13,15 +9,12 @@ import { serve, type Server } from "@standards-lab/web-tooling/server.js";
 
 import { routes } from "./support/upload.ts";
 
-/** The server's routes, whose log holds every request the server is asked. */
 const { handler, requests } = routes();
 let server: Server;
 let browser: Browser;
 const pages: Page[] = [];
 
 before(async () => {
-  // The repository root, whose fixtures load the package's built dist/, and the router's page for
-  // every path with no extension, as an app's server sends its shell for each deep link.
   server = await serve({
     root: join(import.meta.dirname, "../.."),
     shell: "/test/fixtures/router.html",
@@ -37,7 +30,6 @@ after(async () => {
   await server?.stop();
 });
 
-/** The fixture's setup() options: test/fixtures/router-app.js's setup() names each. */
 interface Setup {
   base?: string;
   baseElement?: string;
@@ -46,8 +38,6 @@ interface Setup {
   error?: boolean;
 }
 
-/** The fixture's snapshot(), by value: the URL's path, query, and fragment, the outlet's markup,
- * and router.current, its query as a string, or "undefined" when there is none. */
 interface Snapshot {
   url: string;
   outlet: string;
@@ -55,24 +45,19 @@ interface Snapshot {
     { pattern: string; tag: string; params: Record<string, string>; query: string } | "undefined";
 }
 
-/** The fixture's setup under /app/, its base from a <base> element. */
 const APP: Setup = { baseElement: "/app/", prefix: "/app/" };
 
-/** Opens the path, makes the router with the setup options, and, unless asked not to, starts it. */
 async function open(path: string, options: Setup = APP, { start = true } = {}) {
   const page = await browser.open(server.origin + path);
   pages.push(page);
-  // A download the router leaves to the browser goes nowhere.
   await page.cdp("Page.setDownloadBehavior", { behavior: "deny" });
   await page.evaluate(`setup(${JSON.stringify(options)})`);
   if (start) await page.evaluate("router.start()");
   return page;
 }
 
-/** The page's URL path, outlet markup, and router.current. */
 const snapshot = (page: Page): Promise<Snapshot> => page.evaluate("snapshot()");
 
-/** Clicks the element with the id as a mouse does, at its center. */
 async function click(page: Page, id: string) {
   const { x, y }: { x: number; y: number } = await page.evaluate(`(() => {
     const box = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect();
@@ -83,15 +68,12 @@ async function click(page: Page, id: string) {
   }
 }
 
-/** Runs the action, resolving to the snapshot at the router's next change. */
 async function changeOn(page: Page, action: () => Promise<unknown>): Promise<Snapshot> {
   await page.evaluate("window.pending = nextChange(), 0");
   await action();
   return page.evaluate("pending");
 }
 
-/** Runs the action, resolving once the page has loaded a new document, and rejecting when none
- * loads within 2 s: a navigation the router intercepted loads none. */
 async function loadOn(page: Page, action: () => Promise<unknown>) {
   const loaded = new Promise((resolve) => page.on("Page.loadEventFired", resolve));
   await action();
@@ -102,7 +84,6 @@ async function loadOn(page: Page, action: () => Promise<unknown>) {
   await Promise.race([loaded, deadline]).finally(() => clearTimeout(timer));
 }
 
-/** Runs the action, resolving once the page has fired one more navigate event, and a task after. */
 async function navigateOn(page: Page, action: () => Promise<unknown>) {
   const count: number = await page.evaluate("navigates.length");
   await action();
@@ -112,22 +93,18 @@ async function navigateOn(page: Page, action: () => Promise<unknown>) {
   })`);
 }
 
-/** Goes back (-1) or forward (+1) through the browser, as its buttons do. */
 async function traverse(page: Page, delta: number) {
   const { currentIndex, entries }: { currentIndex: number; entries: { id: number }[] } =
     await page.cdp("Page.getNavigationHistory");
   await page.cdp("Page.navigateToHistoryEntry", { entryId: entries[currentIndex + delta].id });
 }
 
-/** The number of entries in the page's history. */
 const entries = (page: Page): Promise<number> => page.evaluate("navigation.entries().length");
 
-/** Marks the outlet's element, so a test can tell whether it is the same one later. */
 const mark = (page: Page): Promise<true> => page.evaluate("outlet.firstElementChild.marked = true");
 const marked = (page: Page): Promise<boolean> =>
   page.evaluate("outlet.firstElementChild?.marked === true");
 
-/** The snapshot of a mounted x-user for the user, at the URL. */
 const user = (name: string, url: string, query = ""): Snapshot => ({
   url,
   outlet: `<x-user user="${name}"></x-user>`,
@@ -186,8 +163,6 @@ describe("the router's navigations", () => {
     assert.equal((await snapshot(page)).outlet, "<x-about></x-about>");
   });
 
-  // The browser's own reload never reaches the router's navigate listener; a script's does, and the
-  // router leaves it to the browser too.
   test("a script's location.reload() loads the page again", async () => {
     const page = await open("/app/about");
     await loadOn(page, () => page.evaluate("setTimeout(() => location.reload()), 0"));

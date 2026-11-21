@@ -1,6 +1,3 @@
-// The event-sequence interface as a consumer imports it, the package's ./events.js export over the
-// dist/ mise run build wrote: the sequence contract run against the in-memory sequence, its own
-// cursor rules, and, under tsc, the sequence satisfying EventSequence and a Cursor opaque to apps.
 // From spike-html-apps-sdk (df65376): test/unit/events.test.ts.
 
 import assert from "node:assert/strict";

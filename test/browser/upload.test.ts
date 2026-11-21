@@ -1,9 +1,4 @@
-// The API client's upload from the package's dist/, on test/fixtures/upload.html, sending generated
-// bodies over XMLHttpRequest to the routes test/browser/support/upload.ts handles under /upload/:
-// its progress, its Result's data and problems, its token and 401 retry, and its signal. Node has
-// no XMLHttpRequest, so these run here; test/unit/api.test.ts covers its Result where there is none.
-// Adapted from spike-html-apps-sdk (df65376): test/browser/upload.test.ts, on
-// @standards-lab/web-tooling.
+// Adapted from spike-html-apps-sdk (df65376): test/browser/upload.test.ts, on web-tooling.
 
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -20,7 +15,6 @@ let browser: Browser;
 let page: Page;
 
 before(async () => {
-  // The repository root, whose fixtures load the package's built dist/.
   server = await serve({ root: join(import.meta.dirname, "../.."), handler: routes().handler });
   browser = await launch();
   page = await browser.open(`${server.origin}/test/fixtures/upload.html`);
@@ -30,11 +24,8 @@ after(async () => {
   await server?.stop();
 });
 
-/** 16 MB: past what the loopback socket's buffers take at once, so, with the server reading
- * slowly, the browser reports the body's progress several times between 0 and the total. */
 const LARGE = 16 * 1024 * 1024;
 
-/** What the fixture's upload() sends: test/fixtures/upload-app.js's upload() names each. */
 interface Spec {
   route: string;
   kind?: "blob" | "file" | "form" | "bigint";
@@ -45,7 +36,6 @@ interface Spec {
   abort?: "progress" | number;
 }
 
-/** What /upload/echo answers: the request as the server received it, a small body as text. */
 interface Echo {
   method: string;
   type: string;
@@ -54,26 +44,19 @@ interface Echo {
   text: string | null;
 }
 
-/** What the fixture's upload() resolves to, by value: the Result (its data an echo where the route
- * is echo), each progress call as [sent, total], and the provider's refreshes. */
 interface Uploaded {
   result: Result<Echo>;
   progress: [number, number][];
   refreshes: number;
 }
 
-/** The fixture's upload() of the spec: { result, progress, refreshes }. */
 const upload = (spec: Spec): Promise<Uploaded> => page.evaluate(`upload(${JSON.stringify(spec)})`);
 
-/** The data of `result`, which the case expects to succeed; the case fails, with the problem,
- * otherwise. */
 function dataOf<T>(result: Result<T>): T {
   assert.ok(result.ok, JSON.stringify(result.ok ? undefined : result.problem));
   return result.data;
 }
 
-/** Asserts the progress calls are one send's: from 0, never going back, each with the total, and
- * ending at the total; and returns how many fell strictly between. */
 function oneSend(progress: [number, number][], total: number) {
   assert.deepEqual(progress[0], [0, total]);
   assert.deepEqual(progress.at(-1), [total, total]);
@@ -146,7 +129,6 @@ describe("the upload's Result", () => {
   });
 
   test("no body is undefined", async () => {
-    // The page returns the Result by value, which drops an undefined member.
     assert.deepEqual((await upload({ route: "empty", size: 10 })).result, { ok: true });
   });
 
@@ -188,7 +170,6 @@ describe("the upload's 401", () => {
     });
     assert.deepEqual(result, { ok: true, data: { authorized: true, size } });
     assert.equal(refreshes, 1);
-    // Two sends, each its own run from 0 to the total.
     const restart = progress.findLastIndex(([sent]) => sent === 0);
     assert.ok(restart > 0, `progress never started again: ${progress}`);
     oneSend(progress.slice(0, restart), size);
@@ -216,7 +197,6 @@ describe("the problems the upload makes itself", () => {
       title: "Request not encodable",
     });
     assert.match(detail ?? "", /BigInt/);
-    // No send started: the progress callback, called at 0 as each send starts, never ran.
     assert.deepEqual(progress, []);
   });
 

@@ -1,6 +1,6 @@
 // tsc run as a consumer of the build: scratch files and the repository's test sources compiled
 // together, the package's name mapped to the dist/ mise run build wrote, under the repository's
-// tsconfig.json without allowImportingTsExtensions, which only its own sources need.
+// tsconfig.json without allowImportingTsExtensions.
 // From spike-html-apps-sdk (df65376): test/unit/typecheck.ts.
 
 import assert from "node:assert/strict";
@@ -43,8 +43,6 @@ export function typecheck(files: Record<string, string>, sources: string[] = [])
     const errors = [...run.stdout.matchAll(/^(\S+?)\((\d+),\d+\): error (TS\d+)/gm)].map(
       ([, path, line, code]) => `${path.split("/").pop()}:${line} ${code}`,
     );
-    // An error tsc reports without a location (a config it can't read, say) would leave the list
-    // empty and pass a case that expects none, so every error must be one of these.
     assert.equal(run.stdout.match(/error TS\d+/g)?.length ?? 0, errors.length, run.stdout);
     return errors;
   } finally {

@@ -1,6 +1,3 @@
-// The API client as a consumer imports it, the package's ./api.js export over the dist/ mise run
-// build wrote, against a loopback node:http server each suite starts, its event streams written in
-// chunks with delays between; and the sample documents service over it, at runtime and under tsc.
 // From spike-html-apps-sdk (df65376): test/unit/api.test.ts.
 
 import assert from "node:assert/strict";
@@ -26,8 +23,6 @@ import type { TokenProvider } from "@standards-lab/web-app-sdk/auth.js";
 import { documents } from "./documents.ts";
 import { typecheck } from "./typecheck.ts";
 
-/** Writes `body` (an object as JSON, a string or Buffer as it is) with `status`, `type`, and, when
- * given, the status text `message`. */
 function send(
   res: ServerResponse,
   status: number,
@@ -41,15 +36,12 @@ function send(
   res.end(bytes);
 }
 
-/** Starts a text/event-stream response, its headers sent at once so the client's stream resolves
- * before the first event; the response's close counted in `state.closed`. */
 function startEvents(res: ServerResponse, state: State) {
   res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
   res.flushHeaders();
   res.on("close", () => state.closed++);
 }
 
-/** Writes `chunks` to a started event stream, `delay` ms apart, then ends it. */
 function writeEvents(res: ServerResponse, chunks: string[], delay = 10) {
   let at = 0;
   const next = () => {
@@ -61,15 +53,12 @@ function writeEvents(res: ServerResponse, chunks: string[], delay = 10) {
   next();
 }
 
-/** The request's body, read whole, as text. */
 async function text(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** An event stream's chunks: a "request" event echoing the method, Accept, and body, then three
- * "tick" events, split mid-line, mid-field, and inside a CRLF. */
 function ticks(req: IncomingMessage, body: string) {
   const request = JSON.stringify({ method: req.method, accept: req.headers.accept, body });
   return [
@@ -82,8 +71,6 @@ function ticks(req: IncomingMessage, body: string) {
   ];
 }
 
-/** A JSON document as it was stored: its whitespace, and integer-like keys after the others, which
- * JSON.parse would move first. */
 const stored = '{ "title": "x",\n  "2": [1,  2],\n  "1": null }\n';
 
 const docs = [
@@ -92,8 +79,6 @@ const docs = [
   { id: 3, title: "three" },
 ];
 
-/** A server's state: the requests it has received, those to /api/auth, the event-stream responses
- * that have closed, and the gate /api/events/gate waits on before its first event. */
 interface State {
   authHits: number;
   closed: number;
@@ -101,7 +86,6 @@ interface State {
   gate: Promise<void>;
 }
 
-/** What /api/echo answers: the request as the server received it. */
 interface Echo {
   method: string;
   url: string;
@@ -110,8 +94,6 @@ interface Echo {
   bytes: number[];
 }
 
-/** The sample server's routes, by path under /api: each kind of body and failure the client
- * decodes, an echo of the request, a route behind a bearer token, and the documents service's. */
 function handle(req: IncomingMessage, res: ServerResponse, state: State) {
   const url = new URL(req.url ?? "/", "http://loopback");
   const path = url.pathname.replace(/^\/api/, "");
@@ -176,7 +158,6 @@ function handle(req: IncomingMessage, res: ServerResponse, state: State) {
     case "/failure":
       return send(res, 503, "text/plain", "down", "Service Unavailable");
     case "/silent":
-      // Node fills an empty status message in, so the response is written to the socket raw.
       return req.socket.end("HTTP/1.1 599 \r\nContent-Length: 4\r\nConnection: close\r\n\r\ndown");
     case "/slow": {
       const timer = setTimeout(() => send(res, 200, "application/json", { late: true }), 2000);
@@ -225,12 +206,10 @@ function handle(req: IncomingMessage, res: ServerResponse, state: State) {
       startEvents(res, state);
       return writeEvents(res, ["data: authorized\n\n"]);
     case "/events/gate":
-      // The first event waits for the test to open state.gate.
       startEvents(res, state);
       state.gate.then(() => writeEvents(res, ["data: through\n\n"]));
       return;
     case "/events/endless": {
-      // A tick every 10 ms until the client goes.
       startEvents(res, state);
       let n = 0;
       const timer = setInterval(() => res.write(`data: ${++n}\n\n`), 10);
@@ -238,7 +217,6 @@ function handle(req: IncomingMessage, res: ServerResponse, state: State) {
       return;
     }
     case "/events/drop":
-      // Two events, then the socket destroyed with the response unfinished.
       startEvents(res, state);
       res.write("data: 1\n\n");
       setTimeout(() => res.write("data: 2\n\n"), 10);
@@ -249,8 +227,6 @@ function handle(req: IncomingMessage, res: ServerResponse, state: State) {
   }
 }
 
-/** A loopback server over handle, listening; its origin and its per-server state, which counts
- * the requests it receives. */
 async function serve() {
   const state: State = { authHits: 0, closed: 0, requests: 0, gate: Promise.resolve() };
   const server = createServer((req, res) => {
@@ -259,7 +235,6 @@ async function serve() {
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  // A server listening on a TCP port has an AddressInfo for its address.
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return { server, origin, state };
 }
@@ -277,8 +252,6 @@ after(() => {
   loopback.server.close();
 });
 
-/** A token provider that holds `token`, whose refresh, after `delay` ms, gives `fresh` (and holds
- * it), counting its calls. */
 function provider(token: string, fresh: string | undefined, delay = 0) {
   const p: TokenProvider & { current: string | undefined; refreshes: number } = {
     current: token,
@@ -294,14 +267,11 @@ function provider(token: string, fresh: string | undefined, delay = 0) {
   return p;
 }
 
-/** The data of `result`, which the case expects to succeed; the case fails, with the problem,
- * otherwise. */
 function dataOf<T>(result: Result<T>): T {
   assert.ok(result.ok, JSON.stringify(result.ok ? undefined : result.problem));
   return result.data;
 }
 
-/** The problem of `result`, which the case expects to fail; the case fails otherwise. */
 function problemOf(result: Result<unknown>): Problem {
   assert.ok(!result.ok, "the call succeeded");
   return result.problem;
@@ -720,7 +690,6 @@ describe("the token", () => {
   });
 });
 
-/** Every event of a stream's Result, read to its end. */
 async function collect(result: Result<AsyncIterable<ServerSentEvent>>) {
   assert.equal(result.ok, true, JSON.stringify(result.ok ? undefined : result.problem));
   const events: ServerSentEvent[] = [];
@@ -728,8 +697,6 @@ async function collect(result: Result<AsyncIterable<ServerSentEvent>>) {
   return events;
 }
 
-/** Runs `fn` with a client over a server of its own, so no other test's response closes on it, and
- * the server's state. */
 async function alone(fn: (client: Client, state: State) => Promise<void>) {
   const own = await serve();
   try {
@@ -740,7 +707,6 @@ async function alone(fn: (client: Client, state: State) => Promise<void>) {
   }
 }
 
-/** Resolves once the server has seen a response close; fails when it hasn't within a second. */
 async function closed(state: State) {
   const deadline = Date.now() + 1000;
   while (state.closed === 0) {
@@ -755,7 +721,6 @@ const ticked = [
   { type: "tick", data: "three", id: "3" },
 ];
 
-// An endless stream that a defect leaves unended would stall the run: the timeout fails it instead.
 describe("the stream", { timeout: 5000 }, () => {
   test("with no body, a GET with Accept: text/event-stream, its events parsed as they arrive", async () => {
     const [request, ...rest] = await collect(await client.stream("events"));
@@ -846,7 +811,6 @@ describe("the stream", { timeout: 5000 }, () => {
       assert.equal((await iterator.next()).value.data, "1");
       controller.abort();
       await new Promise((resolve) => setTimeout(resolve, 30));
-      // Ticks parsed already may still come; the abort ends the events after them, with no throw.
       let next;
       do next = await iterator.next();
       while (!next.done);
@@ -881,7 +845,6 @@ describe("the stream", { timeout: 5000 }, () => {
         assert.equal(event.data, "1");
         break;
       }
-      // The server sees the response close, which an endless stream does only when the client goes.
       await closed(state);
     });
   });
@@ -906,7 +869,6 @@ describe("the sample documents service", () => {
     ]);
   });
 
-  // Node has no XMLHttpRequest, so the upload's own cases run in the browser tier.
   test("upload resolves to the network problem where there is no XMLHttpRequest", async () => {
     assert.equal(typeof XMLHttpRequest, "undefined");
     let progressed = false;
@@ -926,7 +888,6 @@ describe("the sample documents service", () => {
   });
 
   test("list resolves a Page", async () => {
-    // The server echoes the page number it was sent.
     const result = await documents(client).list(2);
     assert.deepEqual(result, { ok: true, data: { items: docs, page: 2, size: 3, more: false } });
   });

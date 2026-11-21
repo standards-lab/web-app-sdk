@@ -1,5 +1,3 @@
-// The layer's import rules: eslint.config.js run over test/unit/layers-tree.ts's tree, passing only
-// when ESLint flags exactly the files that break a rule, each with exactly the rules its case names.
 // From spike-html-apps-sdk (df65376): test/unit/layers.test.ts.
 
 import assert from "node:assert/strict";
@@ -19,7 +17,6 @@ describe("layer imports", () => {
     assert.equal(run.stdout.trim(), `v${manifest.devDependencies?.eslint}`);
   });
 
-  // One tree, so each case is judged beside the others, as the package's files are.
   const files = { ...sources(violations), ...allowed };
   let scratch: string;
   let found: Record<string, string[]>;

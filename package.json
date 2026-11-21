@@ -45,6 +45,7 @@
     }
   },
   "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
     "@eslint/js": "10.0.1",
     "@nats-io/jetstream": "3.5.0",
     "@nats-io/nats-core": "3.5.0",

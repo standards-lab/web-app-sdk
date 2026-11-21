@@ -37,8 +37,6 @@ export interface CloudEvent<T = unknown> {
   readonly extensions?: Readonly<Record<string, string>>;
 }
 
-// The brand that makes a Cursor opaque: it exists only in the types, so no value has it but one a
-// sequence gave out.
 declare const cursor: unique symbol;
 
 /** A place in an event sequence: the position of the event a delivery carries. It is opaque: an app

@@ -35,9 +35,6 @@ export interface NatsSequence<T = unknown> extends EventSequence<T> {
   close(): Promise<void>;
 }
 
-/** The CloudEvents context attributes binary content mode carries as ce-* headers (go-core
- * v0.10.0's event.Encode); any other ce-* header is an extension. datacontenttype rides in
- * content-type instead. */
 const attributes = new Set([
   "specversion",
   "id",
@@ -48,24 +45,17 @@ const attributes = new Set([
   "dataschema",
 ]);
 
-/** A cursor this adapter writes: a stream sequence, a positive decimal integer. */
 const cursorPattern = /^[1-9][0-9]*$/;
 
-/** The UnknownCursorError for `cursor`, a cursor the adapter never gave out. */
 const unknown = (cursor: Cursor) =>
   new UnknownCursorError(cursor, `the NATS sequence gave out no cursor ${JSON.stringify(cursor)}`);
 
-/** The stream sequence `cursor` marks; throws an UnknownCursorError on a string the adapter never
- * writes. */
 function sequenceOf(cursor: Cursor): number {
   const seq = Number(cursor);
   if (!cursorPattern.test(cursor) || !Number.isSafeInteger(seq)) throw unknown(cursor);
   return seq;
 }
 
-/** `data`, the bytes of the event `id`, decoded by `contentType`: application/json and any +json
- * type parsed, any text/* type decoded in its charset (UTF-8 by default), and any other type, or
- * none, the bytes themselves. Throws, naming the event, on bytes that don't decode as their type. */
 function decodeData(id: string, contentType: string | undefined, data: Uint8Array): unknown {
   const [essence = "", ...parameters] = (contentType ?? "").split(";");
   const type = essence.trim().toLowerCase();
@@ -75,7 +65,6 @@ function decodeData(id: string, contentType: string | undefined, data: Uint8Arra
     .map((parameter) => parameter.trim().match(/^charset\s*=\s*"?([^";]+)"?$/i)?.[1])
     .find((value) => value !== undefined);
   try {
-    // fatal: a byte sequence that isn't the charset's fails, rather than decoding as U+FFFD.
     const text = new TextDecoder(json ? "utf-8" : (charset ?? "utf-8"), { fatal: true }).decode(
       data,
     );
@@ -85,11 +74,6 @@ function decodeData(id: string, contentType: string | undefined, data: Uint8Arra
   }
 }
 
-/** The CloudEvent `msg` carries in binary content mode, as go-messaging's broker publishes it: the
- * ce-* headers the attributes and extensions, content-type the datacontenttype, and the body the
- * data, absent when empty. Header names match case-insensitively, a lowercase name winning over
- * another spelling of it, as go-core's event.Decode reads them. Throws on a message that isn't a
- * CloudEvents 1.0 event, or whose data doesn't decode. */
 function decode(msg: JsMsg): CloudEvent {
   const headers = new Map<string, string>();
   for (const key of msg.headers?.keys() ?? []) {
@@ -136,22 +120,17 @@ function decode(msg: JsMsg): CloudEvent {
 export function natsSequence<T = unknown>(options: NatsSequenceOptions): NatsSequence<T> {
   const { stream, token: provider = anonymous } = options;
   const servers = typeof options.servers === "string" ? [options.servers] : [...options.servers];
-  // The token the connection presents, read on every (re)connect.
   let token: string | undefined;
   let connecting: Promise<NatsConnection> | undefined;
   let closed = false;
-  // Each read's messages, with what it fails with when the connection is lost.
   const reads = new Map<ConsumerMessages, { failure?: Error }>();
 
-  /** Opens a connection with the current token. */
   const open = () =>
     wsconnect({
       servers,
       ...(token === undefined ? {} : { authenticator: tokenAuthenticator(() => token ?? "") }),
     });
 
-  /** Opens the connection, refreshing the token once when the server refuses it, and watches it:
-   * when it closes but by close(), every read fails, and the next read reconnects. */
   async function connect(): Promise<NatsConnection> {
     token = await provider.token();
     let nc: NatsConnection;
@@ -179,8 +158,6 @@ export function natsSequence<T = unknown>(options: NatsSequenceOptions): NatsSeq
     return nc;
   }
 
-  /** The shared connection, opened when there is none; a failed open is forgotten, so the next
-   * read tries again. */
   function connection(): Promise<NatsConnection> {
     connecting ??= connect().catch((error: unknown) => {
       connecting = undefined;
@@ -197,9 +174,6 @@ export function natsSequence<T = unknown>(options: NatsSequenceOptions): NatsSeq
     const nc = await connection();
     const js = jetstream(nc);
     if (start !== undefined) {
-      // A cursor past the stream's last sequence is one the adapter never wrote. One at or below
-      // it is accepted, whether or not the stream still keeps its message: the server starts the
-      // consumer at the oldest kept. Only a read with a cursor pays for the stream info request.
       const { state } = await (await js.jetstreamManager(false)).streams.info(stream);
       if (start > state.last_seq) throw unknown(after as Cursor);
     }
@@ -215,7 +189,6 @@ export function natsSequence<T = unknown>(options: NatsSequenceOptions): NatsSeq
     const stop = () => messages.stop();
     signal?.addEventListener("abort", stop, { once: true });
     try {
-      // The signal may have aborted, or close() run, while the consumer was made.
       if (signal?.aborted || closed) return;
       const wanted = new Set(types);
       for await (const msg of messages) {

@@ -1,22 +1,17 @@
-# Adapted from spike-html-apps-sdk (df65376): mise.toml, its pins at their latest and its browser at
-# web-components' pin.
-# Tasks never install a missing tool; mise run install is the one task that reads the network.
+# The SDK's tools and tasks.
+# See docs/development.md
+# Adapted from spike-html-apps-sdk (df65376): mise.toml, its browser at web-components' pin.
 [settings]
 task.run_auto_install = false
 
-# The SDK's toolchain.
 [tools]
 actionlint = "1.7.12"
 node = "26.13.1"
 pnpm = "12.21.0"
 shellcheck = "0.11.0"
 "github:microsoft/typescript-go" = { version = "7.0.2", version_prefix = "typescript/v", bin_path = "package/lib" }
-# The NATS adapter's server, which test/unit/nats.test.ts starts per suite on the loopback address.
-# mise's registry maps nats-server to github:nats-io/nats-server.
 nats-server = "2.15.3"
 
-# The browser tier's browser, at web-components' pin. Chrome for Testing publishes no checksums:
-# take the sha256 and size from the download by hand at each bump.
 [tools."http:chrome-headless-shell"]
 version = "158.0.8127.36"
 version_list_url = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json"
@@ -48,7 +43,6 @@ run = "pnpm exec prettier --check ."
 description = "Shellcheck the scripts"
 run = "shellcheck scripts/*.sh"
 
-# actionlint shellchecks each run: block too, with the shellcheck pinned above.
 [tasks."lint:workflows"]
 description = "Lint the GitHub Actions workflows with actionlint"
 run = "actionlint"
@@ -62,8 +56,6 @@ description = "Type-check the sources with tsc"
 depends = ["preflight"]
 run = "tsc --noEmit -p ."
 
-# The tests import the package by its name, which resolves to dist/'s declarations, so the build
-# comes first.
 [tasks."types:test"]
 description = "Type-check the tests with tsc, over the build"
 depends = ["build"]

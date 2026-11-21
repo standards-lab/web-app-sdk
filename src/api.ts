@@ -1,6 +1,5 @@
-// The application SDK's API client, on fetch and AbortSignal, and on XMLHttpRequest for an upload,
-// whose progress fetch doesn't report: the problem, the result, the page, the server-sent event,
-// the client's options and shape, and createClient. Every call resolves to a Result and never
+// The application SDK's API client: the problem, the result, the page, the server-sent event, the
+// client's options and shape, and createClient. Every call resolves to a Result and never
 // rejects; a stream's events, read after it resolves, are the one place an error is thrown.
 // From spike-html-apps-sdk (df65376): src/api.ts.
 
@@ -112,7 +111,8 @@ export interface TextOptions extends RequestOptions {
 /** An upload's options: a call's, the method, POST by default or PUT, and `progress`, called with
  * the bytes of the body sent and its total as the body goes out: at 0 when each send starts, a
  * retry's included, then as bytes are sent, and at the total once the whole body is sent. The
- * total is 0 when the browser can't compute it. */
+ * total is 0 when the browser can't compute it. A `progress` callback makes a cross-origin upload a
+ * preflighted request. */
 export interface UploadOptions extends RequestOptions {
   method?: "POST" | "PUT";
   progress?: (sent: number, total: number) => void;
@@ -170,20 +170,15 @@ export interface Client {
 export function createClient(options: ClientOptions = {}): Client {
   const base = options.base ?? "/api";
   const auth = options.auth ?? anonymous;
-  // The refresh pending, which every 401 that arrives meanwhile awaits instead of starting its own.
-  let refreshing: Promise<string | undefined> | undefined;
+  let pendingRefresh: Promise<string | undefined> | undefined;
 
   function refresh(): Promise<string | undefined> {
-    refreshing ??= settle(auth.refresh()).finally(() => {
-      refreshing = undefined;
+    pendingRefresh ??= settle(auth.refresh()).finally(() => {
+      pendingRefresh = undefined;
     });
-    return refreshing;
+    return pendingRefresh;
   }
 
-  /** The response that `send` gives, sending the request with its headers, which carry the
-   * provider's token, and once more with the refreshed token after a 401; it rejects as `send`
-   * does. Every request, a call's, a stream's, and an upload's, is sent through it. `accept`, when
-   * given, is the Accept header, over any of the caller's. */
   async function respond(
     path: string,
     body: unknown,
@@ -215,7 +210,6 @@ export function createClient(options: ClientOptions = {}): Client {
     return response;
   }
 
-  /** `respond` over fetch, for a call and a stream. */
   function fetched(
     method: string,
     path: string,
@@ -228,8 +222,6 @@ export function createClient(options: ClientOptions = {}): Client {
     return respond(path, body, request, send, accept);
   }
 
-  /** A call, its body read as text under TextOptions. Each verb is generic in T, so it serves both
-   * of the verb's overloads: T is string under TextOptions. */
   async function call<T>(
     method: string,
     path: string,
@@ -290,7 +282,6 @@ export function createClient(options: ClientOptions = {}): Client {
   }
 
   return {
-    // An overloaded member gives its parameters no contextual type, so each is typed here.
     get: <T>(path: string, options?: Partial<TextOptions>) =>
       call<T>("GET", path, undefined, options),
     post: <T>(path: string, body?: unknown, options?: Partial<TextOptions>) =>
@@ -306,9 +297,6 @@ export function createClient(options: ClientOptions = {}): Client {
   };
 }
 
-/** One send of an upload over XMLHttpRequest, resolving to its response as a Response, so it
- * decodes, and makes its problem, as fetch's does. It rejects as fetch does: with the signal's
- * reason when the signal aborts it, and with a TypeError when the network fails. */
 function transmit(
   method: string,
   url: string,
@@ -324,8 +312,6 @@ function transmit(
     xhr.responseType = "blob";
     headers.forEach((value, name) => xhr.setRequestHeader(name, value));
     if (progress !== undefined) {
-      // loadstart reports 0 as each send starts, a retry's too, and load the total once the whole
-      // body is sent. A listener on xhr.upload makes a cross-origin upload preflighted.
       const report = (event: ProgressEvent) => progress(event.loaded, event.total);
       for (const type of ["loadstart", "progress", "load"]) {
         xhr.upload.addEventListener(type, report as EventListener);
@@ -347,8 +333,6 @@ function transmit(
   });
 }
 
-/** A finished XMLHttpRequest's response as a Response: its status, status text, headers, and its
- * body, none for a status that may carry none. */
 function response(xhr: XMLHttpRequest): Response {
   const headers = new Headers();
   for (const line of xhr.getAllResponseHeaders().trim().split(/\r?\n/)) {
@@ -363,9 +347,6 @@ function response(xhr: XMLHttpRequest): Response {
   });
 }
 
-/** The events of a text/event-stream body, parsed as its chunks arrive. A read that fails ends
- * the events quietly when `signal` aborted it, and throws a StreamError with the network problem
- * otherwise. However the loop ends, a break or a throw in it included, the body is cancelled. */
 async function* events(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined,
@@ -386,14 +367,10 @@ async function* events(
     }
     yield* parser.end();
   } finally {
-    // A body read to its end, or one that failed, has nothing left to cancel, and its cancel
-    // settles at once; a cancel that rejects has no caller to tell.
     await reader.cancel().catch(() => {});
   }
 }
 
-/** A provider's token, or undefined when the provider rejects, which the client treats as having
- * none rather than rejecting itself. */
 async function settle(token: Promise<string | undefined>): Promise<string | undefined> {
   try {
     return await token;
@@ -402,8 +379,6 @@ async function settle(token: Promise<string | undefined>): Promise<string | unde
   }
 }
 
-/** `path` joined under `base` with one "/", by text, since URL resolution drops the base's path
- * for a path that begins with "/", and the query's parameters appended. */
 function join(base: string, path: string, query: RequestOptions["query"]): string {
   let url = `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
   const params = new URLSearchParams();
@@ -415,13 +390,8 @@ function join(base: string, path: string, query: RequestOptions["query"]): strin
   return url;
 }
 
-/** The error `encode` throws for a body JSON.stringify can't encode, which `failure` makes the encode
- * problem; its message is the stringify error's, or empty when stringify gave nothing. */
 class Unencodable extends Error {}
 
-/** The request body for `body`: none for undefined, the kinds fetch and XMLHttpRequest send as they
- * are, and JSON, with its Content-Type set on `headers`, for any other. A body JSON.stringify throws
- * on, or gives nothing for, throws Unencodable before anything is sent. */
 function encode(body: unknown, headers: Headers): XMLHttpRequestBodyInit | undefined {
   if (body === undefined) return undefined;
   if (
@@ -439,13 +409,11 @@ function encode(body: unknown, headers: Headers): XMLHttpRequestBodyInit | undef
   } catch (error) {
     throw new Unencodable(error instanceof Error ? error.message : String(error));
   }
-  // JSON.stringify's type claims a string, but it gives undefined for a function or a symbol.
   if (json === undefined) throw new Unencodable();
   headers.set("Content-Type", "application/json");
   return json;
 }
 
-/** The response's media type, lowercased, without its parameters; "" when it has none. */
 function mediaType(response: Response): string {
   return (response.headers.get("Content-Type") ?? "").split(";")[0].trim().toLowerCase();
 }
@@ -454,11 +422,8 @@ function isJSON(type: string): boolean {
   return type === "application/json" || type.endsWith("+json");
 }
 
-/** A response's Result: its body decoded by content type when it succeeded, or read as its text
- * when `as` is "text", the empty string for no body; its problem when it didn't. */
 async function decode<T>(response: Response, as?: "text"): Promise<Result<T>> {
   if (!response.ok) return { ok: false, problem: await problem(response) };
-  // T is string here: only a TextOptions overload passes "text".
   if (as === "text") return { ok: true, data: (await response.text()) as T };
   const type = mediaType(response);
   const blob = await response.blob();
@@ -485,8 +450,6 @@ async function decode<T>(response: Response, as?: "text"): Promise<Result<T>> {
   return { ok: true, data: blob as T };
 }
 
-/** A failing response's problem: its problem document, every member kept, or an "about:blank"
- * problem titled with the status text when it carries none. */
 async function problem(response: Response): Promise<Problem> {
   const fallback = `HTTP ${response.status}`;
   if (mediaType(response) === "application/problem+json") {
@@ -494,7 +457,7 @@ async function problem(response: Response): Promise<Problem> {
     try {
       document = JSON.parse(await response.text());
     } catch {
-      // Not a document after all: the about:blank problem below.
+      document = undefined;
     }
     if (typeof document === "object" && document !== null && !Array.isArray(document)) {
       const members = document as Record<string, unknown>;
@@ -511,11 +474,8 @@ async function problem(response: Response): Promise<Problem> {
   return { type: "about:blank", status: response.status, title: response.statusText || fallback };
 }
 
-/** The problem for an error the call threw: a body that isn't encodable, the signal's abort, its
- * timeout, or the network. */
 function failure(error: unknown, signal: AbortSignal | undefined): Problem {
   if (error instanceof Unencodable) {
-    // Thrown before any send, so it is the cause even under a signal that has since aborted.
     const problem: Problem = {
       type: "urn:standards-lab:problem:encode",
       status: 0,
@@ -525,8 +485,6 @@ function failure(error: unknown, signal: AbortSignal | undefined): Problem {
     return problem;
   }
   if (signal?.aborted) {
-    // AbortSignal.timeout aborts with a DOMException named TimeoutError; any other reason is the
-    // caller's abort.
     const reason: unknown = signal.reason;
     if (
       typeof reason === "object" &&
