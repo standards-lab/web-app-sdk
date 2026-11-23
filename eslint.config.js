@@ -1,7 +1,6 @@
 // The lint the check runs: the recommended rules, a reason on every suppression, and the layer's
 // imports in src/.
 // See docs/development.md
-// Adapted from spike-html-apps-sdk (df65376): eslint.config.js.
 
 import comments from "@eslint-community/eslint-plugin-eslint-comments";
 import js from "@eslint/js";

@@ -1,5 +1,3 @@
-// From spike-html-apps-sdk (df65376): test/unit/api.test.ts.
-
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import {

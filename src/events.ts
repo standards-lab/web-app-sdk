@@ -3,7 +3,6 @@
 // live as events are appended. It is the contract only, types and the one error a read's start
 // rejects with, with no dependency: an implementation (the NATS adapter, a test's in-memory
 // sequence) meets the semantics its doc comments state.
-// From spike-html-apps-sdk (df65376): src/events.ts.
 
 /** A CloudEvent (CloudEvents 1.0), its context attributes as members and its payload as `data`. The
  * four required attributes are always present; the optional ones are absent when the event has

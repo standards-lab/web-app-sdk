@@ -1,5 +1,3 @@
-// From spike-html-apps-sdk (df65376): test/fixtures/upload-app.js.
-
 import { createClient } from "@standards-lab/web-app-sdk/api.js";
 
 function body(kind, size) {

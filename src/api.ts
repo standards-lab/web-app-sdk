@@ -1,7 +1,6 @@
 // The application SDK's API client: the problem, the result, the page, the server-sent event, the
 // client's options and shape, and createClient. Every call resolves to a Result and never
 // rejects; a stream's events, read after it resolves, are the one place an error is thrown.
-// From spike-html-apps-sdk (df65376): src/api.ts.
 
 import type { TokenProvider } from "./auth.ts";
 import { anonymous } from "./auth.ts";

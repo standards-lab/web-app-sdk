@@ -1,5 +1,3 @@
-// From spike-html-apps-sdk (df65376): test/unit/layers.test.ts.
-
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";

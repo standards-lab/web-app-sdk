@@ -1,7 +1,6 @@
 // The browser tier's own routes, the handler it passes to the tooling's serve: under /upload/, the
 // routes the upload's cases send to, and, over every request, a log of what the server was asked.
 // The rest, the repository's files and the shell page, the tooling's server sends.
-// Adapted from spike-html-apps-sdk (df65376): test/browser/support/upload.ts, on web-tooling.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 

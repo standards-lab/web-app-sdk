@@ -1,5 +1,3 @@
-// From spike-html-apps-sdk (df65376): test/fixtures/router-app.js.
-
 import { createRouter } from "@standards-lab/web-app-sdk/router.js";
 
 for (const tag of ["x-home", "x-about", "x-user", "x-not-found", "x-error"]) {

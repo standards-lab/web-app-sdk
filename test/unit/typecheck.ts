@@ -1,7 +1,6 @@
 // tsc run as a consumer of the build: scratch files and the repository's test sources compiled
 // together, the package's name mapped to the dist/ mise run build wrote, under the repository's
 // tsconfig.json without allowImportingTsExtensions.
-// From spike-html-apps-sdk (df65376): test/unit/typecheck.ts.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

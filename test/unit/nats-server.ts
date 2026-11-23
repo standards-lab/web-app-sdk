@@ -1,7 +1,6 @@
 // The NATS tier's server: the nats-server NATS_SERVER names (mise.toml's pin, which mise run
 // test:unit passes), started with a generated config on the loopback address, its WebSocket
 // listener without TLS, JetStream in a temporary store, and an authorization token.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/nats-server.ts.
 
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

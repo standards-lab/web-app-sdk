@@ -1,6 +1,5 @@
 # The files Prettier skips: all but the code and the JSON.
 # See docs/development.md
-# From spike-html-apps-sdk (df65376): .prettierignore.
 *
 !*/
 !*.js

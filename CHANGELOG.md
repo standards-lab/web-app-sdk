@@ -1,6 +1,3 @@
-<!-- Adapted from web-components (a659353): CHANGELOG.md, for @standards-lab/web-app-sdk, with
-none of spike-html-apps-sdk's versions. -->
-
 # Changelog
 
 All notable changes to `@standards-lab/web-app-sdk` are documented here. The format follows

@@ -1,6 +1,5 @@
 // A sample domain service, as an app's domains tier writes one: a stateless object over the Client,
 // one endpoint per route, checked against Service with `satisfies`.
-// From spike-html-apps-sdk (df65376): test/unit/documents.ts.
 
 import type { Client, Page } from "@standards-lab/web-app-sdk/api.js";
 import type { Service, ServiceFactory } from "@standards-lab/web-app-sdk/service.js";

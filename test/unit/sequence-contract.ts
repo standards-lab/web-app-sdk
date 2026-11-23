@@ -2,7 +2,6 @@
 // test against a sequence a factory makes. test/unit/events.test.ts runs it against the in-memory
 // sequence; an adapter's suite runs it against the adapter, over a live server. Every test has a
 // timeout.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/sequence-contract.ts, its take exported.
 
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
