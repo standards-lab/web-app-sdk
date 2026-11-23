@@ -14,8 +14,7 @@ optional and imported by `./events/nats.js` alone.
 
 ## Provenance
 
-The package's lineage is recorded in the workspace's
-[references catalog](https://github.com/standards-lab/org/blob/main/references.md).
+The package's lineage is in the workspace's [references catalog](https://github.com/standards-lab/org/blob/main/references.md).
 
 ## Capability map
 
