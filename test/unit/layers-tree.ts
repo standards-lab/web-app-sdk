@@ -1,6 +1,7 @@
 // The layer's import cases as one file tree in the repository's shape: a file per forbidden import
 // and form, each with the rules that catch it, and the imports the layer may make in the same
-// layout. layers.test.ts lints it.
+// layout. The tree sits in a workspace directory beside webappgen's checkout, the layer above.
+// layers.test.ts lints it.
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
@@ -15,7 +16,7 @@ export const manifest = readManifest(root);
 const sdk = manifest.name;
 
 const siblings = ["foundation", "components"].map((layer) => sdk.replace(/app-sdk$/, layer));
-const app = `${sdk}-template`;
+const webappgen = "../webappgen/internal/starter/files/src/main.ts";
 
 export const table = "boundaries/dependencies";
 export const extraneous = "import-x/no-extraneous-dependencies";
@@ -51,8 +52,11 @@ export const violations = {
     ...forms("src/forms/lit", "lit"),
     ...forms("src/forms/foundation", `${siblings[0]}/dom.js`),
     ...forms("src/forms/components", `${siblings[1]}/status-badge.js`),
-    "src/app.ts": `import { define } from "${app}/main.js";`,
     ...forms("src/forms/typescript", "typescript"),
+  }),
+  ...by([table], {
+    "src/app.ts": `import { define } from "../${webappgen}";`,
+    ...forms("src/forms/app", `../../${webappgen}`),
   }),
   ...by([table], forms("src/forms/self-name", `${sdk}/auth.js`)),
   ...by([table], {
@@ -114,16 +118,10 @@ const targets = {
   ].join("\n"),
   "dist/auth.js": "export {};",
   "dist/auth.d.ts": "export interface X {}",
+  [webappgen]: "export const define = () => {};",
 };
 
-const externals = [
-  "lit",
-  ...siblings,
-  app,
-  "typescript",
-  "@nats-io/nats-core",
-  "@nats-io/jetstream",
-];
+const externals = ["lit", ...siblings, "typescript", "@nats-io/nats-core", "@nats-io/jetstream"];
 const stub = (name: string): Record<string, string> => ({
   "package.json": JSON.stringify({
     name,
@@ -142,8 +140,9 @@ const stub = (name: string): Record<string, string> => ({
 });
 
 /** Writes `files` under `dir` with the manifest, the targets, the externals, and a link to the
- * package itself, as an install of its own name lays it out, so every import resolves and the lint
- * judges it. Returns the code files written under src/. */
+ * package itself, as an install of its own name lays it out, and webappgen's checkout beside it in
+ * `dir`'s parent, so every import resolves and the lint judges it. Returns the code files written
+ * under src/. */
 export function writeTree(dir: string, files: Record<string, string>): string[] {
   const written: Record<string, string> = {
     ...files,
