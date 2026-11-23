@@ -1,5 +1,3 @@
-// Adapted from spike-html-apps-sdk (df65376): test/unit/nats.test.ts, its take from the contract.
-
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

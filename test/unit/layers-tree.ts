@@ -1,7 +1,6 @@
 // The layer's import cases as one file tree in the repository's shape: a file per forbidden import
 // and form, each with the rules that catch it, and the imports the layer may make in the same
 // layout. layers.test.ts lints it.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/layers-tree.ts, for the SDK's layer.
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";

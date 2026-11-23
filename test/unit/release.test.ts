@@ -1,5 +1,3 @@
-// Adapted from spike-html-apps-sdk (df65376): test/unit/release.test.ts, its dependencies checked.
-
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

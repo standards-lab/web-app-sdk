@@ -3,7 +3,6 @@
 // manifest declares, and its dependencies: none at run time, the NATS adapter's packages optional
 // peers, and the tooling a devDependency at its release tag. test/unit/release.test.ts runs it on
 // a pnpm pack.
-// Adapted from spike-html-apps-sdk (df65376): test/unit/release.ts, its dependencies checked.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

@@ -1,5 +1,3 @@
-// Adapted from spike-html-apps-sdk (df65376): test/unit/declarations.test.ts, without fixtures.
-
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

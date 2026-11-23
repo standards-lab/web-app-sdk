@@ -1,6 +1,5 @@
 // The application SDK's auth hook: the client asks a TokenProvider for the token each call
 // carries. anonymous, the default, is here; an app supplies its own provider.
-// From spike-html-apps-sdk (df65376): src/auth.ts.
 
 /** Where the client's bearer token comes from. `token` is the current token, undefined when there
  * is none (the call goes without Authorization); `refresh` obtains a new one after a 401, and the

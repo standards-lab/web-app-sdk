@@ -2,7 +2,6 @@
 // go-messaging's NATS broker (nats/v0.2.0) publishes in binary content mode. It is the one module
 // that imports the @nats-io packages, which are optional peer dependencies: an app that reads no
 // NATS stream never loads them.
-// From spike-html-apps-sdk (df65376): src/events/nats.ts.
 
 import { AuthorizationError, tokenAuthenticator, wsconnect } from "@nats-io/nats-core";
 import type { NatsConnection } from "@nats-io/nats-core";

@@ -1,5 +1,3 @@
-// Adapted from spike-html-apps-sdk (df65376): test/browser/upload.test.ts, on web-tooling.
-
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";

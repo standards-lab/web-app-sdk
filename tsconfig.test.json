@@ -1,6 +1,5 @@
 // The tests' type-check, mise run types:test, which never emits.
 // See docs/development.md
-// From spike-html-apps-sdk (df65376): tsconfig.test.json.
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {

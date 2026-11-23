@@ -1,6 +1,3 @@
-<!-- Adapted from spike-html-apps-sdk (df65376): README.md, for @standards-lab/web-app-sdk. -->
-<!-- Adapted from web-components (a659353): README.md, its Release section. -->
-
 # web-app-sdk
 
 The application SDK of the standards-lab web client stack: the API client and its Result and
@@ -148,9 +145,8 @@ the tag's tree to the pack, file for file; and creates the GitHub release from t
 
 ## Provenance
 
-The package is seeded by copy from spike-html-apps-sdk at df65376, its v0.4.0 code, and moved onto
-web-tooling v0.1.0 and the `@nats-io` 3.5.0 packages. Each copied file that takes comments names
-each of its sources in a provenance line.
+The package's lineage is recorded in the workspace's
+[references catalog](https://github.com/standards-lab/org/blob/main/references.md).
 
 ## License
 

@@ -1,6 +1,5 @@
 // An in-memory EventSequence, the contract's reference implementation: events appended to an array,
 // each read a generator over it that waits for the next append.
-// From spike-html-apps-sdk (df65376): test/unit/memory-sequence.ts.
 
 import { UnknownCursorError } from "@standards-lab/web-app-sdk/events.js";
 import type {

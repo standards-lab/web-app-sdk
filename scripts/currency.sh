@@ -3,8 +3,6 @@
 # Actions pin, and github: devDependency's tag behind its latest, and each optional peer's range
 # that doesn't admit its package's latest release, and exits 1 if any; prints nothing when all are
 # current. Reads the network.
-# Adapted from spike-html-apps-sdk (df65376): scripts/currency.sh, with a peer-range check added.
-# Adapted from web-components (a659353): scripts/currency.sh, its peer-range check.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

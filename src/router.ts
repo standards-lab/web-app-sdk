@@ -1,6 +1,5 @@
 // The application SDK's router, on URLPattern and the Navigation API: it matches each navigation
 // under its base against the route table and mounts the route's element in its outlet.
-// From spike-html-apps-sdk (df65376): src/router.ts.
 
 /** Imports the module that defines a route's element and resolves to the element's tag, so the
  * element's code loads on the route's first visit. */
