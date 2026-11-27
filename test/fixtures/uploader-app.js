@@ -102,9 +102,9 @@ window.digests = async (sizes) => {
 
 let current;
 
-window.prepare = async ({ size, chunkSize, token, fresh, attempts = 1 }) => {
+window.prepare = async ({ size, chunkSize, token, fresh, attempts = 1, delay = 0 }) => {
   const auth = token === undefined && fresh === undefined ? undefined : provider(token, fresh);
-  const uploader = createUploader({ base: "/", auth, attempts, delay: 0, chunkSize });
+  const uploader = createUploader({ base: "/", auth, attempts, delay, chunkSize });
   const result = await uploader.create(
     "uploads",
     file("file", size, "report.bin", "application/octet-stream"),
@@ -113,16 +113,42 @@ window.prepare = async ({ size, chunkSize, token, fresh, attempts = 1 }) => {
   return result.ok ? { ok: true, data: { location: result.data.location } } : result;
 };
 
-window.send = async ({ sends = 1, overlap = false, abort } = {}) => {
-  let inFlight = 0;
-  let most = 0;
+function counted() {
+  const count = { inFlight: 0, most: 0 };
+  const begin = () => {
+    count.inFlight++;
+    count.most = Math.max(count.most, count.inFlight);
+  };
+  const open = XMLHttpRequest.prototype.open;
   const transmit = XMLHttpRequest.prototype.send;
+  const fetched = window.fetch;
+  XMLHttpRequest.prototype.open = function (...args) {
+    this.addEventListener("loadend", () => count.inFlight--);
+    return open.apply(this, args);
+  };
   XMLHttpRequest.prototype.send = function (...args) {
-    inFlight++;
-    most = Math.max(most, inFlight);
-    this.addEventListener("loadend", () => inFlight--);
+    begin();
     return transmit.apply(this, args);
   };
+  window.fetch = (...args) => {
+    begin();
+    const response = fetched(...args);
+    response.then(
+      () => count.inFlight--,
+      () => count.inFlight--,
+    );
+    return response;
+  };
+  count.restore = () => {
+    XMLHttpRequest.prototype.open = open;
+    XMLHttpRequest.prototype.send = transmit;
+    window.fetch = fetched;
+  };
+  return count;
+}
+
+window.send = async ({ sends = 1, overlap = false, abort } = {}) => {
+  const count = counted();
   const progress = [];
   const one = (i) => {
     const reports = [];
@@ -144,8 +170,15 @@ window.send = async ({ sends = 1, overlap = false, abort } = {}) => {
     } else {
       for (let i = 0; i < sends; i++) results.push(await one(i));
     }
-    return { results, progress, most, refreshes: current.auth?.refreshes ?? 0 };
+    return { results, progress, most: count.most, refreshes: current.auth?.refreshes ?? 0 };
   } finally {
-    XMLHttpRequest.prototype.send = transmit;
+    count.restore();
   }
+};
+
+window.cancel = async ({ abort } = {}) => {
+  const controller = new AbortController();
+  if (abort === "before") controller.abort();
+  else if (typeof abort === "number") setTimeout(() => controller.abort(), abort);
+  return current.upload.cancel({ signal: controller.signal });
 };

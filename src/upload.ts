@@ -1,8 +1,8 @@
 // The application SDK's resumable upload client, for draft-ietf-httpbis-resumable-upload-16 at
 // Upload-Draft-Interop-Version 11: DRAFT_REVISION, INTEROP_VERSION, the uploader's options and
-// shape, the upload it creates and sends, and createUploader. Every operation resolves to a Result
-// and never rejects; a failure is the server's problem document or one of the client's own
-// problems, as the API client's are.
+// shape, the upload it creates, sends, and cancels, and createUploader. Every operation resolves to
+// a Result and never rejects; a failure is the server's problem document or one of the client's
+// own problems, as the API client's are.
 // See https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-resumable-upload-16
 
 import type { Problem, Result } from "./api.ts";
@@ -29,8 +29,8 @@ export const INTEROP_VERSION = 11;
 /** How an uploader is made: the base every path joins under ("/api" by default), as the API
  * client's does; the token provider whose bearer token every request carries (anonymous by
  * default), refreshed once on a 401 as the API client's is; `attempts`, how many requests in a row
- * may fail before an operation gives up, a positive integer; `delay`, the milliseconds the
- * uploader waits before each repeat, 0 repeating at once; and `chunkSize`, when given, the most
+ * may fail to advance an operation before it gives up, a positive integer; `delay`, the
+ * milliseconds the uploader waits before each repeat, 0 repeating at once; and `chunkSize`, when given, the most
  * bytes one append carries, a positive integer. */
 export interface UploaderOptions {
   base?: string;
@@ -58,26 +58,50 @@ export interface SendOptions extends UploadRequestOptions {
  * response named.
  *
  * `send` appends the rest of the file from the server's offset, the offset the Upload holds, one
- * append at a time: a send made while another runs starts once that one settles. Each append is a
- * PATCH of a chunk no larger than the max-append-size the server last announced in an Upload-Limit
- * nor the uploader's `chunkSize`, with Content-Type application/partial-upload, Upload-Offset, the
- * chunk's SHA-256 as Content-Digest's sha-256 member, Upload-Complete: ?1 on the last and ?0 on
- * the rest, Upload-Draft-Interop-Version, and the bearer token as `create`'s requests carry it.
- * Each response that carries a valid Upload-Limit announces its max-append-size. A 2xx to an
- * append that doesn't complete moves the offset to its Upload-Offset, or past the chunk when it
- * carries none. An Upload-Offset that isn't past the offset or is past the chunk's end, or a 2xx to
- * the last append that doesn't complete the upload, is the decode problem.
+ * append at a time. Each append is a PATCH of a chunk no larger than the max-append-size the server
+ * last announced in an Upload-Limit nor the uploader's `chunkSize`, with Content-Type
+ * application/partial-upload, Upload-Offset, the chunk's SHA-256 as Content-Digest's sha-256
+ * member, Upload-Complete: ?1 on the last and ?0 on the rest, Upload-Draft-Interop-Version, and the
+ * bearer token as `create`'s requests carry it. Each response that carries a valid Upload-Limit
+ * announces its max-append-size. A 2xx to an append that doesn't complete moves the offset to its
+ * Upload-Offset, or past the chunk when it carries none. An Upload-Offset that isn't past the
+ * offset or is past the chunk's end, or a 2xx to the last append that doesn't complete the upload,
+ * is the decode problem.
+ *
+ * After an append that gets no response, a 429, or a 5xx, `send` reads the server's offset with a
+ * HEAD, carrying Upload-Draft-Interop-Version and the bearer token, and resumes from it; a 409
+ * resumes from the Upload-Offset it carries, or from a HEAD when it carries no valid one; a 413
+ * whose Upload-Limit announces a max-append-size below the chunk resends a smaller one. A HEAD that
+ * gets no response, a 429, or a 5xx is repeated. Each of these failures counts against the
+ * uploader's `attempts`, an append the server commits starts the count again, and `send` waits the
+ * uploader's `delay` before each repeat. When the attempts run out, `send` resolves to the last
+ * failure's problem and leaves the upload on the server, and a later `send` resumes it from a
+ * HEAD. A HEAD's 2xx whose Upload-Offset is absent, malformed, or past the file's size, whose
+ * Upload-Complete is malformed, or whose Upload-Complete is ?1, the completion's response lost, is
+ * the decode problem. Any other failing response to a HEAD is its problem, a 404 among them when
+ * the server no longer has the upload.
  *
  * The response that completes the upload, one whose Upload-Complete is ?1 or a 2xx without
  * Upload-Complete to the last append, resolves as the API client's calls do: its body decoded by
- * its content type, or its problem when its status is a 4xx or 5xx, which nothing repeats. Any
- * other failing response is its problem, and the offset stays where the server last confirmed it,
- * for a later send to continue from. Where there is no XMLHttpRequest it resolves to the network
- * problem. The signal aborting, while it reads, hashes, or sends a chunk, is the abort problem, or
- * the timeout problem for AbortSignal.timeout. */
+ * its content type, or its problem when its status is a 4xx or 5xx, which nothing repeats. A later
+ * `send` resolves to that same Result and sends nothing. Any other failing response to an append
+ * is its problem, and the offset stays where the server last confirmed it, for a later send to
+ * continue from. Where there is no XMLHttpRequest it resolves to the network problem. The signal
+ * aborting, while it reads, hashes, sends, or waits, is the abort problem, or the timeout problem
+ * for AbortSignal.timeout, and a later `send` resumes from a HEAD.
+ *
+ * `cancel` sends a DELETE of the upload, carrying Upload-Draft-Interop-Version and the bearer
+ * token, and resolves to undefined on a 2xx and to the response's problem otherwise; a later `send`
+ * reads the offset with a HEAD, a 404 problem once the upload is deleted. The signal aborting the
+ * DELETE is the abort problem, or the timeout problem for AbortSignal.timeout, and the upload stays
+ * as the server holds it.
+ *
+ * The Upload sends one request at a time: a send or cancel made while another runs starts once that
+ * one settles, and no HEAD goes out while another of its requests is in flight. */
 export interface Upload {
   readonly location: string;
   send<T>(options?: SendOptions): Promise<Result<T>>;
+  cancel(options?: UploadRequestOptions): Promise<Result<undefined>>;
 }
 
 /** The uploader. `create` creates the upload resource for a file at the path, joined under the
@@ -131,9 +155,6 @@ export function createUploader(options: UploaderOptions): Uploader {
     signal: AbortSignal | undefined,
     progress: ((sent: number, total: number) => void) | undefined,
   ): Promise<Response> {
-    if (typeof XMLHttpRequest === "undefined") {
-      throw new TypeError("XMLHttpRequest is not available here; send needs a browser");
-    }
     headers.set("Upload-Draft-Interop-Version", String(INTEROP_VERSION));
     return authorize(headers, () => transmit("PATCH", url, headers, payload, { signal, progress }));
   }
@@ -198,11 +219,13 @@ export function createUploader(options: UploaderOptions): Uploader {
 
   function upload(location: string, file: Blob, offset: number, limit: number | undefined): Upload {
     let pending: Promise<unknown> = Promise.resolve();
+    let known = true;
+    let finished: Result<unknown> | undefined;
 
     async function append<T>(
       signal: AbortSignal | undefined,
       progress: ((sent: number, total: number) => void) | undefined,
-    ): Promise<Result<T> | undefined> {
+    ): Promise<Step<T>> {
       const from = offset;
       const size = Math.min(file.size - from, limit ?? Infinity, chunkSize ?? Infinity);
       const last = from + size === file.size;
@@ -218,47 +241,166 @@ export function createUploader(options: UploaderOptions): Uploader {
       });
       const reported =
         progress === undefined ? undefined : (sent: number) => progress(from + sent, file.size);
-      const response = await transmitted(location, headers, chunk, signal, reported);
-      if (completes(response, last)) return decode<T>(response);
+      let response: Response;
+      try {
+        response = await transmitted(location, headers, chunk, signal, reported);
+      } catch (error) {
+        known = false;
+        if (signal?.aborted) throw error;
+        return { kind: "failed", problem: failure(error, signal) };
+      }
+      if (completes(response, last)) {
+        finished = await decode<T>(response);
+        return { kind: "settled", result: finished as Result<T> };
+      }
       limit = parseLimit(response.headers.get("Upload-Limit"))?.maxAppendSize ?? limit;
-      if (!response.ok) return { ok: false, problem: await problem(response) };
+      if (!response.ok) {
+        const failed: Step<T> = { kind: "failed", problem: await problem(response) };
+        if (response.status === 409) {
+          const at = parseOffset(response.headers.get("Upload-Offset"));
+          if (at !== undefined && at <= file.size) offset = at;
+          else known = false;
+          return failed;
+        }
+        if (response.status === 413 && limit !== undefined && limit < size) return failed;
+        if (retryable(response.status)) {
+          known = false;
+          return failed;
+        }
+        return { kind: "settled", result: { ok: false, problem: failed.problem } };
+      }
       await response.body?.cancel();
       if (last) {
-        return undecodable(response, `the last append's ${response.status} left the upload open`);
+        return settled(
+          undecodable(response, `the last append's ${response.status} left the upload open`),
+        );
       }
       const field = response.headers.get("Upload-Offset");
       const next = field === null ? from + size : parseOffset(field);
       if (next === undefined || next <= from || next > from + size) {
-        return undecodable(
-          response,
-          `the append's ${response.status} named Upload-Offset ${field}, outside ${from + 1}..${from + size}`,
+        return settled(
+          undecodable(
+            response,
+            `the append's ${response.status} named Upload-Offset ${field}, outside ${from + 1}..${from + size}`,
+          ),
         );
       }
       offset = next;
-      return undefined;
+      return { kind: "advanced" };
+    }
+
+    async function head<T>(signal: AbortSignal | undefined): Promise<Step<T>> {
+      let response: Response;
+      try {
+        response = await request("HEAD", location, new Headers(), signal);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        return { kind: "failed", problem: failure(error, signal) };
+      }
+      if (!response.ok) {
+        const failed = await problem(response);
+        if (retryable(response.status)) return { kind: "failed", problem: failed };
+        return { kind: "settled", result: { ok: false, problem: failed } };
+      }
+      await response.body?.cancel();
+      const completeField = response.headers.get("Upload-Complete");
+      const complete = parseComplete(completeField);
+      if (completeField !== null && complete === undefined) {
+        return settled(
+          undecodable(
+            response,
+            `the HEAD's ${response.status} named Upload-Complete ${completeField}`,
+          ),
+        );
+      }
+      if (complete === true) {
+        return settled(
+          undecodable(
+            response,
+            `the HEAD's ${response.status} named the upload complete, its completion's response lost`,
+          ),
+        );
+      }
+      const field = response.headers.get("Upload-Offset");
+      const at = parseOffset(field);
+      if (at === undefined || at > file.size) {
+        return settled(
+          undecodable(
+            response,
+            `the HEAD's ${response.status} named Upload-Offset ${field}, outside 0..${file.size}`,
+          ),
+        );
+      }
+      limit = parseLimit(response.headers.get("Upload-Limit"))?.maxAppendSize ?? limit;
+      offset = at;
+      known = true;
+      return { kind: "located" };
     }
 
     async function sent<T>({ signal, progress }: SendOptions): Promise<Result<T>> {
+      if (finished !== undefined) return finished as Result<T>;
       try {
-        for (;;) {
-          const settled = await append<T>(signal, progress);
-          if (settled !== undefined) return settled;
+        if (typeof XMLHttpRequest === "undefined") {
+          throw new TypeError("XMLHttpRequest is not available here; send needs a browser");
+        }
+        for (let failures = 0; ;) {
+          const step = known ? await append<T>(signal, progress) : await head<T>(signal);
+          switch (step.kind) {
+            case "settled":
+              return step.result;
+            case "advanced":
+              failures = 0;
+              break;
+            case "failed":
+              if (++failures >= attempts) {
+                known = false;
+                return { ok: false, problem: step.problem };
+              }
+              await pause(delay, signal);
+          }
         }
       } catch (error) {
         return { ok: false, problem: failure(error, signal) };
       }
     }
 
-    function send<T>(options: SendOptions = {}): Promise<Result<T>> {
-      const run = pending.then(() => sent<T>(options));
-      pending = run;
-      return run;
+    async function cancelled({ signal }: UploadRequestOptions): Promise<Result<undefined>> {
+      try {
+        const response = await request("DELETE", location, new Headers(), signal);
+        if (!response.ok) return { ok: false, problem: await problem(response) };
+        await response.body?.cancel();
+        return { ok: true, data: undefined };
+      } catch (error) {
+        return { ok: false, problem: failure(error, signal) };
+      } finally {
+        known = false;
+      }
     }
 
-    return Object.freeze({ location, send });
+    function queued<R>(run: () => Promise<R>): Promise<R> {
+      const next = pending.then(run);
+      pending = next;
+      return next;
+    }
+
+    return Object.freeze({
+      location,
+      send: <T>(options: SendOptions = {}) => queued(() => sent<T>(options)),
+      cancel: (options: UploadRequestOptions = {}) => queued(() => cancelled(options)),
+    });
   }
 
   return { create };
+}
+
+type Step<T> =
+  | { kind: "settled"; result: Result<T> }
+  | { kind: "advanced" }
+  | { kind: "located" }
+  | { kind: "failed"; problem: Problem };
+
+function settled<T>(result: Result<T>): Step<T> {
+  return { kind: "settled", result };
 }
 
 function undecodable(response: Response, detail: string): { ok: false; problem: Problem } {

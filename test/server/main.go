@@ -2,18 +2,24 @@
 // serves the repository's files under -root as they are on disk, an .html, .js, or .css file with
 // its content type and Cache-Control: no-store and any other path a 404; mounts go-web-sdk's
 // upload.Handler over a MemoryStore at /uploads, its max-append-size -limit bytes unless a control
-// sets another; and answers the tests' controls:
+// sets another; and answers the tests' controls. It keeps no connection alive: every request
+// arrives on a connection of its own.
 //
 //   - GET /control/ready answers 204 once the server listens.
-//   - PUT /control takes a JSON {"fault", "token", "limit"}, replacing all three. A fault fires
-//     once, on the first upload request it applies to: "unavailable" answers any request 503;
-//     "lose-created" closes a creation's connection in place of its 201; "drop-append" closes an
-//     append's connection once half its content has arrived; "reject-complete" answers the
-//     completing request a 422 problem, with Upload-Complete: ?1, in place of its 200. A token
-//     makes every upload request without Authorization: Bearer <token> a 401 problem. A positive
-//     limit is the handler's max-append-size from then on, and 0 restores -limit's.
+//   - PUT /control takes a JSON {"fault", "count", "token", "limit"}, replacing all four. A fault
+//     fires on the first count upload requests it applies to, once when count is 0: "unavailable"
+//     answers any request 503; "throttled" answers any request 429; "stall" holds any request
+//     until its client goes away, or answers it 503 after 5 seconds; "lose-created" closes a
+//     creation's connection in place of its 201; "drop-append" closes the connection of the first
+//     append at each offset of an upload once half its content has arrived, before the handler
+//     commits any of it; "garble-offset" answers a HEAD with Upload-Offset 1.5;
+//     "reject-complete" answers the completing request a 422 problem, with Upload-Complete: ?1, in
+//     place of its 200. A token makes every upload request without Authorization: Bearer <token>
+//     a 401 problem. A positive limit is the handler's max-append-size from then on, and 0
+//     restores -limit's.
 //   - GET /control/requests answers every upload request since the last read, in order, as JSON
-//     {"method", "path", "headers"}, each header's lines joined with ", " under its lowercase name.
+//     {"method", "path", "headers", "at"}, each header's lines joined with ", " under its
+//     lowercase name, and at the milliseconds since the Unix epoch when the request arrived.
 //   - GET /control/uploads/{id} answers the upload's state as JSON {"offset", "length",
 //     "complete", "mediaType", "name", "digest", "size", "sha256"}: the digest the creation's
 //     Repr-Digest carried and the SHA-256 of the bytes stored, each in hex, and size their count;
@@ -50,6 +56,7 @@ var types = map[string]string{
 
 type settings struct {
 	Fault string `json:"fault"`
+	Count int    `json:"count"`
 	Token string `json:"token"`
 	Limit int64  `json:"limit"`
 }
@@ -58,6 +65,7 @@ type request struct {
 	Method  string            `json:"method"`
 	Path    string            `json:"path"`
 	Headers map[string]string `json:"headers"`
+	At      float64           `json:"at"`
 }
 
 type state struct {
@@ -81,6 +89,7 @@ type server struct {
 	uploads  http.Handler
 	requests []request
 	done     map[string]state
+	dropped  map[string]bool
 }
 
 func main() {
@@ -88,8 +97,13 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:0", "the address the server listens on")
 	limit := flag.Int64("limit", 1<<20, "the upload handler's max-append-size, in bytes")
 	flag.Parse()
-	s := &server{root: *root, store: upload.NewMemoryStore(), limit: *limit, done: map[string]state{}}
-	log.Fatal(http.ListenAndServe(*addr, s.routes()))
+	s := &server{
+		root: *root, store: upload.NewMemoryStore(), limit: *limit,
+		done: map[string]state{}, dropped: map[string]bool{},
+	}
+	srv := &http.Server{Addr: *addr, Handler: s.routes()}
+	srv.SetKeepAlivesEnabled(false)
+	log.Fatal(srv.ListenAndServe())
 }
 
 func (s *server) routes() http.Handler {
@@ -143,10 +157,11 @@ func (s *server) configure(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if next.Limit < 0 {
-		http.Error(w, "the limit is negative", http.StatusBadRequest)
+	if next.Limit < 0 || next.Count < 0 {
+		http.Error(w, "the limit or the count is negative", http.StatusBadRequest)
 		return
 	}
+	next.Count = max(next.Count, 1)
 	limit := next.Limit
 	if limit == 0 {
 		limit = s.limit
@@ -155,6 +170,7 @@ func (s *server) configure(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.settings = next
 	s.uploads = uploads
+	s.dropped = map[string]bool{}
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -208,10 +224,7 @@ func (s *server) state(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) complete(w http.ResponseWriter, _ *http.Request, f upload.File, content io.Reader) error {
 	s.mu.Lock()
-	reject := s.settings.Fault == "reject-complete"
-	if reject {
-		s.settings.Fault = ""
-	}
+	reject := s.fire("reject-complete")
 	s.mu.Unlock()
 	if reject {
 		return web.Problem{Status: http.StatusUnprocessableEntity, Detail: "the test server rejects the file"}
@@ -238,13 +251,17 @@ func (s *server) faulted(next http.Handler) http.Handler {
 		for name, values := range r.Header {
 			headers[strings.ToLower(name)] = strings.Join(values, ", ")
 		}
+		at := float64(time.Now().UnixMicro()) / 1000
 		s.mu.Lock()
-		s.requests = append(s.requests, request{Method: r.Method, Path: r.URL.Path, Headers: headers})
+		s.requests = append(s.requests, request{Method: r.Method, Path: r.URL.Path, Headers: headers, At: at})
 		token := s.settings.Token
 		authorized := token == "" || r.Header.Get("Authorization") == "Bearer "+token
 		fault := ""
-		if authorized && applies(s.settings.Fault, r.Method) {
-			fault, s.settings.Fault = s.settings.Fault, ""
+		if authorized && s.applies(r) && s.fire(s.settings.Fault) {
+			fault = s.settings.Fault
+			if fault == "drop-append" {
+				s.dropped[r.URL.Path+" "+r.Header.Get("Upload-Offset")] = true
+			}
 		}
 		s.mu.Unlock()
 		switch {
@@ -254,6 +271,16 @@ func (s *server) faulted(next http.Handler) http.Handler {
 			_, _ = io.WriteString(w, `{"type":"about:blank","status":401,"title":"Unauthorized"}`)
 		case fault == "unavailable":
 			w.WriteHeader(http.StatusServiceUnavailable)
+		case fault == "throttled":
+			w.WriteHeader(http.StatusTooManyRequests)
+		case fault == "stall":
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}
+		case fault == "garble-offset":
+			next.ServeHTTP(garbling{w}, r)
 		case fault == "lose-created":
 			next.ServeHTTP(losing{w}, r)
 		case fault == "drop-append":
@@ -265,16 +292,26 @@ func (s *server) faulted(next http.Handler) http.Handler {
 	})
 }
 
-func applies(fault, method string) bool {
-	switch fault {
-	case "unavailable":
+func (s *server) applies(r *http.Request) bool {
+	switch s.settings.Fault {
+	case "unavailable", "throttled", "stall":
 		return true
 	case "lose-created":
-		return method == http.MethodPost
+		return r.Method == http.MethodPost
 	case "drop-append":
-		return method == http.MethodPatch
+		return r.Method == http.MethodPatch && !s.dropped[r.URL.Path+" "+r.Header.Get("Upload-Offset")]
+	case "garble-offset":
+		return r.Method == http.MethodHead
 	}
 	return false
+}
+
+func (s *server) fire(fault string) bool {
+	if fault == "" || s.settings.Fault != fault || s.settings.Count < 1 {
+		return false
+	}
+	s.settings.Count--
+	return true
 }
 
 type losing struct {
@@ -291,6 +328,15 @@ func (l losing) WriteHeader(status int) {
 
 func (l losing) Unwrap() http.ResponseWriter {
 	return l.ResponseWriter
+}
+
+type garbling struct {
+	http.ResponseWriter
+}
+
+func (g garbling) WriteHeader(status int) {
+	g.Header().Set("Upload-Offset", "1.5")
+	g.ResponseWriter.WriteHeader(status)
 }
 
 func hangUp(w http.ResponseWriter) {

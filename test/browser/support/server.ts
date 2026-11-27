@@ -11,14 +11,24 @@ import { freePort, start } from "@standards-lab/web-tooling/process.js";
 
 const root = join(import.meta.dirname, "../../..");
 
-/** A fault the server's switch fires once, on the first upload request it applies to. */
-export type Fault = "unavailable" | "lose-created" | "drop-append" | "reject-complete";
+/** A fault the server's switch fires on the first upload requests it applies to, as many as its
+ * count. */
+export type Fault =
+  | "unavailable"
+  | "throttled"
+  | "stall"
+  | "lose-created"
+  | "drop-append"
+  | "garble-offset"
+  | "reject-complete";
 
-/** One upload request the server received, each header under its lowercase name. */
+/** One upload request the server received, each header under its lowercase name, and the
+ * milliseconds since the Unix epoch when it arrived. */
 export interface Received {
   method: string;
   path: string;
   headers: Record<string, string>;
+  at: number;
 }
 
 /** An upload's state as the server holds it, digest and sha256 in hex. */
@@ -63,14 +73,21 @@ export async function startServer() {
 
     return {
       origin,
-      /** Arms the fault, sets the token every upload request must carry, and sets the handler's
-       * max-append-size; none clears each, the max-append-size back to the server's default. */
+      /** Arms the fault to fire count times, once by default, sets the token every upload
+       * request must carry, and sets the handler's max-append-size; none clears each, the
+       * max-append-size back to the server's default. */
       async configure({
         fault,
+        count,
         token,
         limit,
-      }: { fault?: Fault; token?: string; limit?: number } = {}) {
-        await control("PUT", "", { fault: fault ?? "", token: token ?? "", limit: limit ?? 0 });
+      }: { fault?: Fault; count?: number; token?: string; limit?: number } = {}) {
+        await control("PUT", "", {
+          fault: fault ?? "",
+          count: count ?? 1,
+          token: token ?? "",
+          limit: limit ?? 0,
+        });
       },
       /** The upload requests since the last call. */
       async requests(): Promise<Received[]> {

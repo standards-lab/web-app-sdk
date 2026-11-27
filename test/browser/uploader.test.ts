@@ -276,6 +276,7 @@ interface Prepared {
   token?: string;
   fresh?: string;
   attempts?: number;
+  delay?: number;
 }
 
 interface Completed {
@@ -338,6 +339,10 @@ async function appends(location: string, chunks: number[]) {
     assert.equal(headers["upload-draft-interop-version"], "11");
     from += chunks[i];
   }
+}
+
+function trail({ method, headers }: { method: string; headers: Record<string, string> }) {
+  return method === "PATCH" ? `PATCH ${headers["upload-offset"]}` : method;
 }
 
 function rising(progress: [number, number][], from: number, total: number) {
@@ -431,18 +436,163 @@ describe("send", () => {
 });
 
 describe("send after an append fails", () => {
-  test("is its problem, and a later send continues from the server's offset", async () => {
+  test("resumes from a HEAD after an append whose connection drops mid-chunk", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size, attempts: 2 });
+    await server.configure({ fault: "drop-append" });
+    const { results, most } = await send();
+    completed(results[0], location, size);
+    await held(location, size);
+    assert.deepEqual((await server.requests()).map(trail), [
+      "PATCH 0",
+      "HEAD",
+      "PATCH 0",
+      `PATCH ${MiB}`,
+      `PATCH ${2 * MiB}`,
+    ]);
+    assert.equal(most, 1);
+  });
+
+  for (const [fault, status] of [
+    ["unavailable", 503],
+    ["throttled", 429],
+  ] as const) {
+    test(`resumes from a HEAD after a ${status}`, async () => {
+      const size = 2 * MiB;
+      const location = await prepare({ size, attempts: 2 });
+      await server.configure({ fault });
+      const { results, most } = await send();
+      completed(results[0], location, size);
+      await held(location, size);
+      assert.deepEqual((await server.requests()).map(trail), [
+        "PATCH 0",
+        "HEAD",
+        "PATCH 0",
+        `PATCH ${MiB}`,
+      ]);
+      assert.equal(most, 1);
+    });
+  }
+
+  test("resumes from the Upload-Offset a 409 carries", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size, attempts: 2 });
+    const first = bytes(size).subarray(0, MiB);
+    const response = await fetch(location, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/partial-upload",
+        "Upload-Offset": "0",
+        "Upload-Complete": "?0",
+        "Content-Digest": `sha-256=:${sha256(first).toString("base64")}:`,
+        "Upload-Draft-Interop-Version": "11",
+      },
+      body: Uint8Array.from(first),
+    });
+    assert.equal(response.status, 204);
+    await server.requests();
+    const { results } = await send();
+    completed(results[0], location, size);
+    await held(location, size);
+    assert.deepEqual((await server.requests()).map(trail), [
+      "PATCH 0",
+      `PATCH ${MiB}`,
+      `PATCH ${2 * MiB}`,
+    ]);
+  });
+
+  test("completes an upload whose creation's 201 was lost", async () => {
+    const size = 2 * MiB;
+    await server.configure({ fault: "lose-created" });
+    const location = await prepare({ size, attempts: 2 });
+    completed((await send()).results[0], location, size);
+    await held(location, size);
+  });
+
+  test("starts the count again at each committed append", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size, attempts: 2 });
+    await server.configure({ fault: "drop-append", count: 3 });
+    const { results, most } = await send();
+    completed(results[0], location, size);
+    await held(location, size);
+    assert.deepEqual((await server.requests()).map(trail), [
+      "PATCH 0",
+      "HEAD",
+      "PATCH 0",
+      `PATCH ${MiB}`,
+      "HEAD",
+      `PATCH ${MiB}`,
+      `PATCH ${2 * MiB}`,
+      "HEAD",
+      `PATCH ${2 * MiB}`,
+    ]);
+    assert.equal(most, 1);
+  });
+
+  test("waits the delay before each repeat", async () => {
+    const size = 1000;
+    const delay = 300;
+    const location = await prepare({ size, attempts: 3, delay });
+    await server.configure({ fault: "unavailable", count: 2 });
+    completed((await send()).results[0], location, size);
+    const requests = await server.requests();
+    assert.deepEqual(requests.map(trail), ["PATCH 0", "HEAD", "HEAD", "PATCH 0"]);
+    for (const at of [1, 2]) {
+      const gap = requests[at].at - requests[at - 1].at;
+      assert.ok(gap >= delay, `request ${at} came ${gap} ms after the one before`);
+    }
+  });
+
+  test("its HEAD carries the interop version and the provider's token", async () => {
+    const size = 1000;
+    await prepare({ size, attempts: 2, token: "abc" });
+    await server.configure({ fault: "unavailable", token: "abc" });
+    assert.equal((await send()).results[0].ok, true);
+    const requests = await server.requests();
+    assert.deepEqual(requests.map(trail), ["PATCH 0", "HEAD", "PATCH 0"]);
+    for (const { headers } of requests) {
+      assert.equal(headers.authorization, "Bearer abc");
+      assert.equal(headers["upload-draft-interop-version"], "11");
+    }
+  });
+
+  test("a HEAD's malformed Upload-Offset is the decode problem", async () => {
     const size = 3 * MiB;
     const location = await prepare({ size });
-    await server.configure({ fault: "unavailable" });
-    const { results, progress } = await send({ sends: 2 });
-    assert.deepEqual(results[0], {
+    assert.equal((await send({ abort: "progress" })).results[0].ok, false);
+    await server.configure({ fault: "garble-offset" });
+    assert.deepEqual((await send()).results[0], {
+      ok: false,
+      problem: {
+        type: "urn:standards-lab:problem:decode",
+        status: 204,
+        title: "Response not decodable",
+        detail: "the HEAD's 204 named Upload-Offset 1.5, outside 0..3145728",
+      },
+    });
+    completed((await send()).results[0], location, size);
+  });
+});
+
+describe("send when its attempts run out", () => {
+  test("is the last problem, the upload left for a later send to resume from a HEAD", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size, attempts: 2 });
+    await server.configure({ fault: "unavailable", count: 2 });
+    assert.deepEqual((await send()).results[0], {
       ok: false,
       problem: { type: "about:blank", status: 503, title: "Service Unavailable" },
     });
-    completed(results[1], location, size);
-    rising(progress[1], 0, size);
+    assert.deepEqual((await server.requests()).map(trail), ["PATCH 0", "HEAD"]);
+    const state = await server.state(location);
+    assert.equal(state?.complete, false);
+    assert.equal(state?.offset, 0);
+    const { results, progress } = await send();
+    completed(results[0], location, size);
+    rising(progress[0], 0, size);
     await held(location, size);
+    assert.equal((await server.requests())[0].method, "HEAD");
   });
 
   test("runs sends made at once one after another, never overlapping", async () => {
@@ -453,6 +603,17 @@ describe("send after an append fails", () => {
     assert.equal(results[0].ok, false);
     completed(results[1], location, size);
     assert.equal(most, 1);
+  });
+});
+
+describe("send on a completed upload", () => {
+  test("resolves to the completion's Result again, sending nothing", async () => {
+    const size = 1000;
+    const location = await prepare({ size });
+    const { results } = await send({ sends: 2 });
+    completed(results[0], location, size);
+    assert.deepEqual(results[1], results[0]);
+    assert.equal((await server.requests()).length, 1);
   });
 });
 
@@ -467,12 +628,70 @@ describe("send's signal", () => {
     assert.deepEqual(await server.requests(), []);
   });
 
-  test("aborted while an append is in flight is the abort problem", async () => {
-    await prepare({ size: 3 * MiB });
-    const { results } = await send({ abort: "progress" });
+  test("aborted while an append is in flight is the abort problem, and a later send completes", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size });
+    const { results, most } = await send({ sends: 2, abort: "progress" });
     assert.deepEqual(results[0], {
       ok: false,
       problem: { type: "urn:standards-lab:problem:abort", status: 0, title: "Request aborted" },
     });
+    completed(results[1], location, size);
+    await held(location, size);
+    assert.equal(most, 1);
+  });
+});
+
+const cancel = (spec: { abort?: "before" | number } = {}) =>
+  page.evaluate(`cancel(${JSON.stringify(spec)})`) as Promise<Result<undefined>>;
+
+describe("cancel", () => {
+  test("sends a DELETE that removes the upload, and a later send is the 404 problem", async () => {
+    const location = await prepare({ size: 1000, token: "abc" });
+    await server.configure({ token: "abc" });
+    assert.deepEqual(await cancel(), { ok: true });
+    const [request, ...rest] = await server.requests();
+    assert.deepEqual(rest, []);
+    assert.equal(request.method, "DELETE");
+    assert.equal(request.path, new URL(location).pathname);
+    assert.equal(request.headers.authorization, "Bearer abc");
+    assert.equal(request.headers["upload-draft-interop-version"], "11");
+    assert.equal(await server.state(location), undefined);
+    await server.configure();
+    assert.equal(
+      ((await page.evaluate(`head(${JSON.stringify(location)})`)) as { status: number }).status,
+      404,
+    );
+    await server.requests();
+    assert.deepEqual((await send()).results[0], {
+      ok: false,
+      problem: { type: "about:blank", status: 404, title: "Not Found" },
+    });
+    assert.deepEqual((await server.requests()).map(trail), ["HEAD"]);
+  });
+
+  test("aborted before it starts is the abort problem, nothing sent", async () => {
+    await prepare({ size: 1000 });
+    assert.deepEqual(await cancel({ abort: "before" }), {
+      ok: false,
+      problem: { type: "urn:standards-lab:problem:abort", status: 0, title: "Request aborted" },
+    });
+    assert.deepEqual(await server.requests(), []);
+  });
+
+  test("aborted in flight is the abort problem, and a later send completes", async () => {
+    const size = 1000;
+    const location = await prepare({ size });
+    await server.configure({ fault: "stall" });
+    assert.deepEqual(await cancel({ abort: 200 }), {
+      ok: false,
+      problem: { type: "urn:standards-lab:problem:abort", status: 0, title: "Request aborted" },
+    });
+    assert.equal((await server.state(location))?.complete, false);
+    await server.configure();
+    await server.requests();
+    completed((await send()).results[0], location, size);
+    await held(location, size);
+    assert.deepEqual((await server.requests()).map(trail), ["HEAD", "PATCH 0"]);
   });
 });

@@ -79,9 +79,9 @@ export interface TransmitOptions {
   progress?: (sent: number, total: number) => void;
 }
 
-/** Sends one request over XMLHttpRequest, resolving to its response as a Response and rejecting as
- * fetch does: with the signal's reason when the signal aborts it, and with a TypeError when the
- * network fails. */
+/** Sends one request over XMLHttpRequest, settling once it ends (its `loadend`): resolving to its
+ * response as a Response and rejecting as fetch does, with the signal's reason when the signal
+ * aborts it and with a TypeError when the network fails. */
 export function transmit(
   method: string,
   url: string,
@@ -103,16 +103,23 @@ export function transmit(
     }
     const abort = () => xhr.abort();
     signal?.addEventListener("abort", abort, { once: true });
-    xhr.addEventListener("loadend", () => signal?.removeEventListener("abort", abort));
+    let settle = () => reject(new TypeError(`${method} ${url} failed`));
     xhr.addEventListener("load", () => {
-      try {
-        resolve(response(xhr));
-      } catch (error) {
-        reject(error);
-      }
+      settle = () => {
+        try {
+          resolve(response(xhr));
+        } catch (error) {
+          reject(error);
+        }
+      };
     });
-    xhr.addEventListener("error", () => reject(new TypeError(`${method} ${url} failed`)));
-    xhr.addEventListener("abort", () => reject(signal?.reason));
+    xhr.addEventListener("abort", () => {
+      settle = () => reject(signal?.reason);
+    });
+    xhr.addEventListener("loadend", () => {
+      signal?.removeEventListener("abort", abort);
+      settle();
+    });
     xhr.send(payload ?? null);
   });
 }
