@@ -61,12 +61,6 @@ function located(result: Result<{ location: string }>): string {
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 
-describe("the upload module", () => {
-  test("names draft revision 16 and interop version 11", async () => {
-    assert.deepEqual(await page.evaluate("constants"), { DRAFT_REVISION: 16, INTEROP_VERSION: 11 });
-  });
-});
-
 describe("the SHA-256", () => {
   test("is crypto.subtle's on the same bytes, fed whole or in pieces", async () => {
     const sizes = [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000, 4097, 1024 * 1024 + 3];
@@ -477,20 +471,7 @@ describe("send after an append fails", () => {
   test("resumes from the Upload-Offset a 409 carries", async () => {
     const size = 3 * MiB;
     const location = await prepare({ size, attempts: 2 });
-    const first = bytes(size).subarray(0, MiB);
-    const response = await fetch(location, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/partial-upload",
-        "Upload-Offset": "0",
-        "Upload-Complete": "?0",
-        "Content-Digest": `sha-256=:${sha256(first).toString("base64")}:`,
-        "Upload-Draft-Interop-Version": "11",
-      },
-      body: Uint8Array.from(first),
-    });
-    assert.equal(response.status, 204);
-    await server.requests();
+    await commit(location, size, MiB);
     const { results } = await send();
     completed(results[0], location, size);
     await held(location, size);

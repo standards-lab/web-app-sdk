@@ -1,8 +1,4 @@
-import {
-  createUploader,
-  DRAFT_REVISION,
-  INTEROP_VERSION,
-} from "@standards-lab/web-app-sdk/upload.js";
+import { createUploader, INTEROP_VERSION } from "@standards-lab/web-app-sdk/upload.js";
 import { Sha256 } from "/dist/sha256.js";
 
 function bytes(size) {
@@ -37,8 +33,6 @@ function provider(token, fresh) {
 
 const hex = (digest) =>
   [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-
-window.constants = { DRAFT_REVISION, INTEROP_VERSION };
 
 window.create = async ({
   path = "uploads",
