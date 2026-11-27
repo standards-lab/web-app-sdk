@@ -4,7 +4,7 @@
 task.run_auto_install = false
 
 [tools]
-"github:standards-lab/claude-plugins" = { version = "0.24.0", version_prefix = "marathon/v" }
+"github:standards-lab/claude-plugins" = { version = "0.24.1", version_prefix = "marathon/v" }
 actionlint = "1.7.12"
 node = "26.13.1"
 pnpm = "12.23.0"
@@ -13,12 +13,12 @@ shellcheck = "0.11.0"
 nats-server = "2.15.3"
 
 [tools."http:chrome-headless-shell"]
-version = "158.0.8127.36"
+version = "158.0.8127.88"
 version_list_url = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json"
 version_json_path = ".channels.Stable.version"
 
 [tools."http:chrome-headless-shell".platforms]
-linux-x64 = { url = "https://storage.googleapis.com/chrome-for-testing-public/{{ version }}/linux64/chrome-headless-shell-linux64.zip", checksum = "sha256:2d3a23017323c54fd457a678e4351f895c4076d8050e39d5aa6247f93448b73a", size = "132087165" }
+linux-x64 = { url = "https://storage.googleapis.com/chrome-for-testing-public/{{ version }}/linux64/chrome-headless-shell-linux64.zip", checksum = "sha256:63401333cc587645bfaeea7f0c90958b327d249251e23954a47f30112ca23d5b", size = "132091593" }
 
 [tasks.preflight]
 description = "Fail naming mise run install when a tool the tasks need is missing"
