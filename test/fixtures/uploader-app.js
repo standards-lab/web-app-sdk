@@ -16,6 +16,12 @@ function file(kind, size, name, type) {
   return new File([bytes(size)], name, { type });
 }
 
+function other(size) {
+  const out = bytes(size);
+  for (let i = 0; i < size; i++) out[i] ^= 0x5a;
+  return new File([out], "report.bin", { type: "application/octet-stream" });
+}
+
 function provider(token, fresh) {
   const p = {
     refreshes: 0,
@@ -109,6 +115,31 @@ window.prepare = async ({ size, chunkSize, token, fresh, attempts = 1, delay = 0
     "uploads",
     file("file", size, "report.bin", "application/octet-stream"),
   );
+  current = result.ok ? { upload: result.data, auth } : undefined;
+  if (result.ok) sessionStorage.setItem("location", result.data.location);
+  return result.ok ? { ok: true, data: { location: result.data.location } } : result;
+};
+
+window.begin = () => {
+  current.upload.send();
+};
+
+window.resume = async ({
+  location = sessionStorage.getItem("location"),
+  size,
+  different = false,
+  token,
+  attempts = 1,
+  delay = 0,
+  abort,
+}) => {
+  const auth = token === undefined ? undefined : provider(token);
+  const uploader = createUploader({ base: "/", auth, attempts, delay });
+  const signal = abort === "before" ? AbortSignal.abort() : undefined;
+  const chosen = different
+    ? other(size)
+    : file("file", size, "report.bin", "application/octet-stream");
+  const result = await uploader.open(location, chosen, { signal });
   current = result.ok ? { upload: result.data, auth } : undefined;
   return result.ok ? { ok: true, data: { location: result.data.location } } : result;
 };

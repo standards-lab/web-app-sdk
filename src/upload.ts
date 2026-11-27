@@ -1,6 +1,6 @@
 // The application SDK's resumable upload client, for draft-ietf-httpbis-resumable-upload-16 at
 // Upload-Draft-Interop-Version 11: DRAFT_REVISION, INTEROP_VERSION, the uploader's options and
-// shape, the upload it creates, sends, and cancels, and createUploader. Every operation resolves to
+// shape, the upload it creates or opens, sends, and cancels, and createUploader. Every operation resolves to
 // a Result and never rejects; a failure is the server's problem document or one of the client's
 // own problems, as the API client's are.
 // See https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-resumable-upload-16
@@ -107,6 +107,7 @@ export interface Upload {
 /** The uploader. `create` creates the upload resource for a file at the path, joined under the
  * base, and resolves to the Upload with nothing of the file sent yet, at the 201's Upload-Offset or
  * 0 when it carries no valid one, and with the max-append-size its valid Upload-Limit announces.
+ * `open` resolves to the Upload of a resource an earlier `create` made, at the server's offset.
  *
  * `create` hashes the whole file with SHA-256, reading it a piece at a time and never holding it
  * whole, then sends a POST with no content carrying Upload-Complete: ?0, the file's size as
@@ -117,9 +118,24 @@ export interface Upload {
  * or the response is a 429 or a 5xx, it waits the delay and repeats the creation, within the
  * attempts, and resolves to the last failure's problem once they run out; any other failing
  * response is its problem. The signal aborting, while it hashes, sends, or waits, is the abort
- * problem, or the timeout problem for AbortSignal.timeout. */
+ * problem, or the timeout problem for AbortSignal.timeout.
+ *
+ * `open` takes the upload's location, which a relative URL names against the page as `create`'s
+ * Location does, and the file the creation was for, which the app kept, and reads the server's
+ * offset with a HEAD as `send` does, carrying Upload-Draft-Interop-Version and the bearer token.
+ * It sends no digest of the whole file; the server checks the creation's Repr-Digest when the
+ * upload completes, and a file other than the creation's fails the completion with the server's
+ * problem. A HEAD that gets no response, a 429, or a 5xx is repeated, within the attempts
+ * and after the delay, and `open` resolves to the last failure's problem once they run out. A 2xx
+ * resolves to the Upload at its Upload-Offset, with the max-append-size its valid Upload-Limit
+ * announces, and is the decode problem when its Upload-Offset is absent, malformed, or past the
+ * file's size, or its Upload-Complete is malformed or ?1. Any other failing response is its
+ * problem, the 404 problem when the server no longer has the upload. A location that isn't a URL
+ * is the network problem. The signal aborting, while it sends or waits, is the abort problem, or
+ * the timeout problem for AbortSignal.timeout. */
 export interface Uploader {
   create(path: string, file: Blob, options?: UploadRequestOptions): Promise<Result<Upload>>;
+  open(location: string, file: Blob, options?: UploadRequestOptions): Promise<Result<Upload>>;
 }
 
 const PIECE = 4 * 1024 * 1024;
@@ -214,12 +230,31 @@ export function createUploader(options: UploaderOptions): Uploader {
       );
     }
     const limit = parseLimit(response.headers.get("Upload-Limit"))?.maxAppendSize;
-    return { ok: true, data: upload(location.href, file, offset, limit) };
+    return { ok: true, data: upload(location.href, file, offset, limit).handle };
   }
 
-  function upload(location: string, file: Blob, offset: number, limit: number | undefined): Upload {
+  async function open(
+    location: string,
+    file: Blob,
+    { signal }: UploadRequestOptions = {},
+  ): Promise<Result<Upload>> {
+    try {
+      const url = new URL(location, globalThis.location?.href);
+      return await upload(url.href, file, undefined, undefined).locate(signal);
+    } catch (error) {
+      return { ok: false, problem: failure(error, signal) };
+    }
+  }
+
+  function upload(
+    location: string,
+    file: Blob,
+    start: number | undefined,
+    limit: number | undefined,
+  ): { handle: Upload; locate: (signal: AbortSignal | undefined) => Promise<Result<Upload>> } {
     let pending: Promise<unknown> = Promise.resolve();
-    let known = true;
+    let offset = start ?? 0;
+    let known = start !== undefined;
     let finished: Result<unknown> | undefined;
 
     async function append<T>(
@@ -383,14 +418,31 @@ export function createUploader(options: UploaderOptions): Uploader {
       return next;
     }
 
-    return Object.freeze({
+    const handle: Upload = Object.freeze({
       location,
       send: <T>(options: SendOptions = {}) => queued(() => sent<T>(options)),
       cancel: (options: UploadRequestOptions = {}) => queued(() => cancelled(options)),
     });
+
+    async function locate(signal: AbortSignal | undefined): Promise<Result<Upload>> {
+      for (let failures = 1; ; failures++) {
+        const step = await head<Upload>(signal);
+        switch (step.kind) {
+          case "located":
+            return { ok: true, data: handle };
+          case "settled":
+            return step.result;
+          case "failed":
+            if (failures >= attempts) return { ok: false, problem: step.problem };
+            await pause(delay, signal);
+        }
+      }
+    }
+
+    return { handle, locate };
   }
 
-  return { create };
+  return { create, open };
 }
 
 type Step<T> =

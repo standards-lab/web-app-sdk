@@ -695,3 +695,237 @@ describe("cancel", () => {
     assert.deepEqual((await server.requests()).map(trail), ["HEAD", "PATCH 0"]);
   });
 });
+
+interface Resumed {
+  location?: string;
+  size: number;
+  different?: boolean;
+  token?: string;
+  attempts?: number;
+  delay?: number;
+  abort?: "before";
+}
+
+const resume = (spec: Resumed) =>
+  page.evaluate(`resume(${JSON.stringify(spec)})`) as Promise<Result<{ location: string }>>;
+
+async function commit(location: string, size: number, to: number) {
+  const first = bytes(size).subarray(0, to);
+  const response = await fetch(location, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/partial-upload",
+      "Upload-Offset": "0",
+      "Upload-Complete": "?0",
+      "Content-Digest": `sha-256=:${sha256(first).toString("base64")}:`,
+      "Upload-Draft-Interop-Version": "11",
+    },
+    body: Uint8Array.from(first),
+  });
+  assert.equal(response.status, 204);
+  await server.requests();
+}
+
+const NOT_FOUND = { ok: false, problem: { type: "about:blank", status: 404, title: "Not Found" } };
+
+describe("open", () => {
+  test("after a page reload mid-upload, completes from the server's offset", async () => {
+    const size = 4 * MiB;
+    const location = await prepare({ size });
+    await page.cdp("Network.enable");
+    await page.cdp("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 0,
+      downloadThroughput: -1,
+      uploadThroughput: 4 * MiB,
+    });
+    try {
+      await page.evaluate("begin()");
+      const deadline = Date.now() + 10_000;
+      while (((await server.state(location))?.offset ?? 0) < MiB) {
+        assert.ok(Date.now() < deadline, "the first chunk was never committed");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await page.goto(`${server.origin}/test/fixtures/uploader.html`);
+    } finally {
+      await page.cdp("Network.emulateNetworkConditions", {
+        offline: false,
+        latency: 0,
+        downloadThroughput: -1,
+        uploadThroughput: -1,
+      });
+      await page.cdp("Network.disable");
+    }
+    const offset = (await server.state(location))?.offset ?? 0;
+    assert.ok(offset >= MiB && offset < size, `the reload left the offset at ${offset}`);
+    const sent = (await server.requests()).filter(({ method }) => method === "PATCH");
+    assert.ok(
+      sent.some(({ headers }) => Number(headers["upload-offset"]) === offset),
+      "no append was in flight at the reload",
+    );
+    assert.equal(located(await resume({ size })), location);
+    const { results, progress } = await send();
+    completed(results[0], location, size);
+    await held(location, size);
+    const trailed = (await server.requests()).map(trail);
+    const expected = ["HEAD"];
+    for (let at = offset; at < size; at += MiB) expected.push(`PATCH ${at}`);
+    assert.deepEqual(trailed, expected);
+    rising(progress[0], offset, size);
+  });
+
+  test("reads the offset with a HEAD carrying the interop version and the provider's token", async () => {
+    const size = 2 * MiB;
+    const location = await prepare({ size });
+    await commit(location, size, MiB);
+    await server.configure({ token: "abc" });
+    assert.equal(located(await resume({ location, size, token: "abc" })), location);
+    const [request, ...rest] = await server.requests();
+    assert.deepEqual(rest, []);
+    assert.equal(request.method, "HEAD");
+    assert.equal(request.path, new URL(location).pathname);
+    assert.equal(request.headers.authorization, "Bearer abc");
+    assert.equal(request.headers["upload-draft-interop-version"], "11");
+  });
+
+  test("its send reports progress from the server's offset", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size });
+    await commit(location, size, MiB);
+    located(await resume({ location, size }));
+    const { results, progress } = await send();
+    completed(results[0], location, size);
+    await held(location, size);
+    rising(progress[0], MiB, size);
+    assert.ok(
+      progress[0].every(([sent]) => sent >= MiB),
+      `progress before the offset: ${progress}`,
+    );
+    assert.deepEqual((await server.requests()).map(trail), [
+      "HEAD",
+      `PATCH ${MiB}`,
+      `PATCH ${2 * MiB}`,
+    ]);
+  });
+
+  test("resolves a relative location against the page", async () => {
+    const size = 1000;
+    const location = await prepare({ size });
+    const opened = located(await resume({ location: new URL(location).pathname, size }));
+    assert.equal(opened, location);
+    completed((await send()).results[0], location, size);
+  });
+
+  test("on a cancelled upload is the 404 problem", async () => {
+    const size = 1000;
+    const location = await prepare({ size });
+    assert.deepEqual(await cancel(), { ok: true });
+    await server.requests();
+    assert.deepEqual(await resume({ location, size }), NOT_FOUND);
+    assert.deepEqual((await server.requests()).map(trail), ["HEAD"]);
+  });
+
+  test("on a location the server never had is the 404 problem", async () => {
+    const location = `${server.origin}/uploads/00000000-0000-4000-8000-000000000000`;
+    assert.deepEqual(await resume({ location, size: 1000 }), NOT_FOUND);
+  });
+
+  test("with a different file of the same length fails at completion, unrepeated", async () => {
+    const size = 2 * MiB;
+    const location = await prepare({ size });
+    located(await resume({ location, size, different: true, attempts: 3 }));
+    const { results } = await send();
+    assert.deepEqual(results[0], {
+      ok: false,
+      problem: {
+        type: "about:blank",
+        status: 400,
+        title: "Bad Request",
+        detail: "the whole file does not match the creation's Repr-Digest; the upload is failed",
+        instance: new URL(location).pathname,
+      },
+    });
+    assert.deepEqual((await server.requests()).map(trail), ["HEAD", "PATCH 0", `PATCH ${MiB}`]);
+    assert.equal(await server.state(location), undefined);
+  });
+
+  test("then cancel sends a DELETE that removes the upload", async () => {
+    const size = 1000;
+    const location = await prepare({ size, token: "abc" });
+    await server.configure({ token: "abc" });
+    located(await resume({ location, size, token: "abc" }));
+    await server.requests();
+    assert.deepEqual(await cancel(), { ok: true });
+    const [request, ...rest] = await server.requests();
+    assert.deepEqual(rest, []);
+    assert.equal(request.method, "DELETE");
+    assert.equal(request.path, new URL(location).pathname);
+    assert.equal(request.headers.authorization, "Bearer abc");
+    assert.equal(request.headers["upload-draft-interop-version"], "11");
+    assert.equal(await server.state(location), undefined);
+  });
+
+  test("repeats a HEAD answered 503 after the delay, within its attempts", async () => {
+    const size = 1000;
+    const delay = 300;
+    const location = await prepare({ size });
+    await server.configure({ fault: "unavailable" });
+    located(await resume({ location, size, attempts: 2, delay }));
+    const requests = await server.requests();
+    assert.deepEqual(requests.map(trail), ["HEAD", "HEAD"]);
+    const gap = requests[1].at - requests[0].at;
+    assert.ok(gap >= delay, `the repeat came ${gap} ms after the HEAD`);
+    completed((await send()).results[0], location, size);
+  });
+
+  test("resolves to the last problem once its attempts run out", async () => {
+    const size = 1000;
+    const location = await prepare({ size });
+    await server.configure({ fault: "throttled", count: 2 });
+    assert.deepEqual(await resume({ location, size, attempts: 2 }), {
+      ok: false,
+      problem: { type: "about:blank", status: 429, title: "Too Many Requests" },
+    });
+    assert.deepEqual((await server.requests()).map(trail), ["HEAD", "HEAD"]);
+  });
+
+  test("a malformed Upload-Offset is the decode problem", async () => {
+    const size = 1000;
+    const location = await prepare({ size });
+    await server.configure({ fault: "garble-offset" });
+    assert.deepEqual(await resume({ location, size, attempts: 3 }), {
+      ok: false,
+      problem: {
+        type: "urn:standards-lab:problem:decode",
+        status: 204,
+        title: "Response not decodable",
+        detail: "the HEAD's 204 named Upload-Offset 1.5, outside 0..1000",
+      },
+    });
+    assert.deepEqual((await server.requests()).map(trail), ["HEAD"]);
+  });
+
+  test("an Upload-Offset past the file's size is the decode problem", async () => {
+    const size = 2 * MiB;
+    const location = await prepare({ size });
+    await commit(location, size, MiB);
+    assert.deepEqual(await resume({ location, size: 1000 }), {
+      ok: false,
+      problem: {
+        type: "urn:standards-lab:problem:decode",
+        status: 204,
+        title: "Response not decodable",
+        detail: `the HEAD's 204 named Upload-Offset ${MiB}, outside 0..1000`,
+      },
+    });
+  });
+
+  test("aborted before it starts is the abort problem, nothing sent", async () => {
+    const location = await prepare({ size: 1000 });
+    assert.deepEqual(await resume({ location, size: 1000, abort: "before" }), {
+      ok: false,
+      problem: { type: "urn:standards-lab:problem:abort", status: 0, title: "Request aborted" },
+    });
+    assert.deepEqual(await server.requests(), []);
+  });
+});
