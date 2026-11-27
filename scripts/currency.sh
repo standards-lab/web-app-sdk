@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Prints `<where>: <item> <pin> -> <latest>` for each mise tool, package.json dependency, GitHub
-# Actions pin, and github: devDependency's tag behind its latest, and each optional peer's range
-# that doesn't admit its package's latest release, and exits 1 if any; prints nothing when all are
-# current. Reads the network.
+# Actions pin, and github: devDependency's tag behind its latest, each optional peer's range that
+# doesn't admit its package's latest release, each direct requirement and the go directive of
+# test/server's Go module behind its latest (the directive against the latest Go minor), and the
+# resumable-upload draft revision src/upload.ts implements when datatracker names a later revision
+# or the RFC the draft became; and exits 1 if any; prints nothing when all are current. Reads the
+# network.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -91,9 +94,44 @@ report_actions() {
   done <<<"$uses"
 }
 
+report_go_module() {
+  local mod=test/server updates line latest directive
+  updates=$(GOWORK=off go -C "$mod" list -m -u -f \
+    '{{if and (not .Main) (not .Indirect) .Update}}{{.Path}} {{.Version}} -> {{.Update.Version}}{{end}}' \
+    all) || return
+  while read -r line; do
+    [[ -z $line ]] || report "$mod/go.mod: $line"
+  done <<<"$updates"
+  latest=$(mise latest go | cut -d. -f1,2) || return
+  directive=$(GOWORK=off go -C "$mod" mod edit -json |
+    node -p 'JSON.parse(require("fs").readFileSync(0)).Go' | cut -d. -f1,2) || return
+  if [[ $directive != "$latest" ]]; then
+    report "$mod/go.mod: go $directive -> go $latest"
+  fi
+}
+
+report_upload_draft() {
+  local source=src/upload.ts draft=draft-ietf-httpbis-resumable-upload pin doc latest
+  pin=$(sed -n 's/^export const DRAFT_REVISION = \([0-9][0-9]*\);$/\1/p' "$source")
+  if [[ -z $pin ]]; then
+    echo "$source: no DRAFT_REVISION constant" >&2
+    exit 1
+  fi
+  doc=$(curl -fsS "https://datatracker.ietf.org/doc/$draft/doc.json") || return
+  latest=$(node -p '
+    const { rev, rfc } = JSON.parse(process.argv[1]);
+    rfc ? "RFC " + rfc : rev
+  ' "$doc") || return
+  if [[ $latest != "$pin" ]]; then
+    report "$source: $draft $pin -> $latest"
+  fi
+}
+
 report_mise_tools
 report_packages
 report_actions
+report_go_module
+report_upload_draft
 
 if [[ -n ${trailing//$'\n'/} ]]; then
   sed '/^$/d' <<<"$trailing"

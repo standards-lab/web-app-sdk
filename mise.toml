@@ -11,6 +11,7 @@ pnpm = "12.23.0"
 shellcheck = "0.11.0"
 "github:microsoft/typescript-go" = { version = "7.0.2", version_prefix = "typescript/v", bin_path = "package/lib" }
 nats-server = "2.15.3"
+go = "1.27.4"
 
 [tools."http:chrome-headless-shell"]
 version = "158.0.8127.88"
@@ -76,7 +77,7 @@ depends = ["preflight nats", "build"]
 run = "NATS_SERVER=$(mise which nats-server) node --test 'test/unit/*.test.ts'"
 
 [tasks."test:browser"]
-description = "Run the browser tier on dist/ in the pinned chrome-headless-shell"
+description = "Run the browser tier on dist/ in the pinned chrome-headless-shell, the uploader against test/server's Go module built with the pinned go"
 depends = ["preflight browser", "build"]
 run = "BROWSER_EXECUTABLE=$(mise which chrome-headless-shell) node --test 'test/browser/*.test.ts'"
 
@@ -85,10 +86,10 @@ description = "Run every check: the linters, lint-context and lint-references am
 depends = ["lint", "types", "build", "test:unit", "test:browser"]
 
 [tasks.install]
-description = "Install the pins and node_modules; reads the network"
-run = ["mise install", "pnpm install --frozen-lockfile"]
+description = "Install the pins, node_modules, and test/server's Go module; reads the network"
+run = ["mise install", "pnpm install --frozen-lockfile", "go -C test/server mod download"]
 
 [tasks.currency]
-description = "Report every mise tool, package.json pin, action pin, the tooling's tag, and the NATS peers' ranges behind its latest, exiting nonzero if any; reads the network"
+description = "Report every mise tool, package.json pin, action pin, the tooling's tag, the NATS peers' ranges, test/server's requirements and go directive, and the upload draft revision behind its latest, exiting nonzero if any; reads the network"
 run = "scripts/currency.sh"
 quiet = true

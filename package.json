@@ -30,6 +30,10 @@
     "./events/nats.js": {
       "types": "./dist/events/nats.d.ts",
       "default": "./dist/events/nats.js"
+    },
+    "./upload.js": {
+      "types": "./dist/upload.d.ts",
+      "default": "./dist/upload.js"
     }
   },
   "peerDependencies": {

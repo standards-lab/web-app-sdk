@@ -17,6 +17,7 @@ const publics = [
   "./service.js",
   "./events.js",
   "./events/nats.js",
+  "./upload.js",
 ];
 const conditions: [string[], string][] = [
   [[], ".js"],
