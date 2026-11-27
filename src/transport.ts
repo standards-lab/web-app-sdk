@@ -227,17 +227,23 @@ export async function decode<T>(response: Response, as?: "text"): Promise<Result
     try {
       return { ok: true, data: JSON.parse(text) as T };
     } catch (error) {
-      return {
-        ok: false,
-        problem: {
-          type: "urn:standards-lab:problem:decode",
-          status: response.status,
-          title: "Response not decodable",
-          detail: error instanceof Error ? error.message : String(error),
-        },
-      };
+      return undecodable(response, error instanceof Error ? error.message : String(error));
     }
   }
   if (type.startsWith("text/")) return { ok: true, data: (await blob.text()) as T };
   return { ok: true, data: blob as T };
+}
+
+/** The failing Result for a response the client can't decode: the decode problem, with the
+ * response's status and the detail. */
+export function undecodable(response: Response, detail: string): { ok: false; problem: Problem } {
+  return {
+    ok: false,
+    problem: {
+      type: "urn:standards-lab:problem:decode",
+      status: response.status,
+      title: "Response not decodable",
+      detail,
+    },
+  };
 }

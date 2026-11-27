@@ -13,6 +13,7 @@ import {
   mediaType,
   problem,
   transmit,
+  undecodable,
   Unencodable,
 } from "./transport.ts";
 
@@ -235,15 +236,7 @@ export function createClient(options: ClientOptions = {}): Client {
       const type = mediaType(response);
       if (type !== "text/event-stream" || response.body === null) {
         await response.body?.cancel();
-        return {
-          ok: false,
-          problem: {
-            type: "urn:standards-lab:problem:decode",
-            status: response.status,
-            title: "Response not decodable",
-            detail: `${type || "no content type"} is not text/event-stream`,
-          },
-        };
+        return undecodable(response, `${type || "no content type"} is not text/event-stream`);
       }
       return { ok: true, data: events(response.body, request.signal) };
     } catch (error) {

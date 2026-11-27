@@ -1,8 +1,8 @@
 // The application SDK's resumable upload client, for draft-ietf-httpbis-resumable-upload-16 at
 // Upload-Draft-Interop-Version 11: DRAFT_REVISION, INTEROP_VERSION, the uploader's options and
-// shape, the upload it creates or opens, sends, and cancels, and createUploader. Every operation resolves to
-// a Result and never rejects; a failure is the server's problem document or one of the client's
-// own problems, as the API client's are.
+// shape, the upload it creates or opens, sends, and cancels, and createUploader. Every operation
+// resolves to a Result and never rejects; a failure is the server's problem document or one of the
+// client's own problems, as the API client's are.
 // See https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-resumable-upload-16
 
 import type { Problem, Result } from "./api.ts";
@@ -17,7 +17,7 @@ import {
   parseOffset,
 } from "./fields.ts";
 import { Sha256 } from "./sha256.ts";
-import { authorizer, decode, failure, join, problem, transmit } from "./transport.ts";
+import { authorizer, decode, failure, join, problem, transmit, undecodable } from "./transport.ts";
 
 /** The revision of draft-ietf-httpbis-resumable-upload the uploader implements. */
 export const DRAFT_REVISION = 16;
@@ -30,8 +30,8 @@ export const INTEROP_VERSION = 11;
  * client's does; the token provider whose bearer token every request carries (anonymous by
  * default), refreshed once on a 401 as the API client's is; `attempts`, how many requests in a row
  * may fail to advance an operation before it gives up, a positive integer; `delay`, the
- * milliseconds the uploader waits before each repeat, 0 repeating at once; and `chunkSize`, when given, the most
- * bytes one append carries, a positive integer. */
+ * milliseconds the uploader waits before each repeat, 0 repeating at once; and `chunkSize`, when
+ * given, the most bytes one append carries, a positive integer. */
 export interface UploaderOptions {
   base?: string;
   auth?: TokenProvider;
@@ -453,18 +453,6 @@ type Step<T> =
 
 function settled<T>(result: Result<T>): Step<T> {
   return { kind: "settled", result };
-}
-
-function undecodable(response: Response, detail: string): { ok: false; problem: Problem } {
-  return {
-    ok: false,
-    problem: {
-      type: "urn:standards-lab:problem:decode",
-      status: response.status,
-      title: "Response not decodable",
-      detail,
-    },
-  };
 }
 
 function completes(response: Response, last: boolean): boolean {
