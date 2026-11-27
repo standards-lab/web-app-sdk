@@ -1,5 +1,5 @@
-// The SDK's own SHA-256, as FIPS 180-4 defines it, fed incrementally so a file is hashed a piece
-// at a time; it needs no secure context, where crypto.subtle does.
+// The SDK's own SHA-256, as FIPS 180-4 defines it, fed incrementally, a file a piece at a time,
+// in any context, secure or not.
 
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,

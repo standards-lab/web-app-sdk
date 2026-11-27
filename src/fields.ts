@@ -2,7 +2,7 @@
 // Dictionaries whose members are Integers, Booleans, or Byte Sequences, read and written; and the
 // draft's own reading of them: Upload-Offset, Upload-Complete, Upload-Limit, and a Repr-Digest or
 // Content-Digest's sha-256 member. A parser accepts any well-formed field, ignoring parameters,
-// and returns undefined for a malformed one, which the draft has a receiver ignore.
+// and returns undefined for a malformed one.
 // See https://www.rfc-editor.org/rfc/rfc9651
 
 const MAX_INTEGER = 999_999_999_999_999;
