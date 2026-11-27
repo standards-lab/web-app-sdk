@@ -15,9 +15,9 @@ All notable changes to `@standards-lab/web-app-sdk` are documented here. The for
   server's offset, after a reload; an `Upload`'s `send` appends the file in chunks, reporting its
   progress, and `cancel` deletes it. Every operation resolves to a `Result` and never rejects. A
   request that gets no response, a 429, or a 5xx is repeated, within `attempts` and after `delay`,
-  resuming from the offset a HEAD reads; a 409 resumes from the offset it names, and a 413 resends
-  a smaller chunk. Each request carries the `TokenProvider`'s bearer token, refreshed once on a
-  401, as the API client's do.
+  and an append resumes from the offset a HEAD reads; a 409 resumes from the offset it names, and
+  a 413 that lowers the max-append-size resends a smaller chunk. Each request carries the
+  `TokenProvider`'s bearer token, refreshed once on a 401, as the API client's do.
 - The browser tier runs the uploader against `test/server`, a Go test server mounting
   go-web-sdk's upload handler, with faults and controls the tests drive.
 

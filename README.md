@@ -2,9 +2,9 @@
 
 The application SDK of the standards-lab web client stack: the API client and its Result and
 Problem types, the token hook, the router, the domain-service pattern, the event sequence with its
-NATS adapter, and the resumable upload client. It is a runtime with no runtime dependency, written in TypeScript and shipped as
-ES modules with their type declarations, and is released by git tag. It depends on no other layer
-of the stack.
+NATS adapter, and the resumable upload client. It is a runtime with no runtime dependency, written
+in TypeScript and shipped as ES modules with their type declarations, and is released by git tag.
+It depends on no other layer of the stack.
 
 ## Install
 
@@ -82,11 +82,12 @@ import { createUploader } from "@standards-lab/web-app-sdk/upload.js";
 `./events/nats.js` imports `@nats-io/nats-core` and `@nats-io/jetstream` (`^3.5.0`), the package's
 optional peer dependencies: install them only to use that subpath. No other subpath imports them.
 
-`createUploader` takes the API client's `base` and `auth`, `attempts`, how many requests in a row
-may fail before an operation gives up, and `delay`, the milliseconds before each repeat. `send`
-appends the file in chunks, resuming from the server's offset after a failure, and resolves to the
-completing response, decoded as the API client's calls are. An app keeps the upload's `Location`
-so that, after a reload, `open` resumes it with the same file, which the user picks again:
+`createUploader` takes the API client's `base` and `auth`; `attempts`, how many requests in a row
+may fail before an operation gives up; `delay`, the milliseconds before each repeat; and an
+optional `chunkSize`, the most bytes one append carries. `send` appends the file in chunks,
+resuming from the server's offset after a failure, and resolves to the completing response,
+decoded as the API client's calls are. An app keeps the upload's `Location` so that, after a
+reload, `open` resumes it with the same file, which the user picks again:
 
 ```ts
 const uploader = createUploader({ attempts: 5, delay: 1000 });
@@ -109,11 +110,10 @@ so an app on the handler's origin needs nothing.
 ## Browser support
 
 The runtime targets the browser. The browser floor is Safari 26.2, Firefox 147, and Chromium, set
-by the Navigation API, which the router needs with `URLPattern`. `upload` and an
-`Upload`'s `send` need `XMLHttpRequest`; where there is none, as on Node, they resolve to the
-network problem. The SDK imports no CSS module
-script, so a page may also load a release from jsDelivr `/gh/` through an import map in every
-browser. The browser tier runs Chromium alone; Firefox and WebKit are untested.
+by the Navigation API, which the router needs with `URLPattern`. `upload` and an `Upload`'s `send`
+need `XMLHttpRequest`; where there is none, as on Node, they resolve to the network problem. The
+SDK imports no CSS module script, so a page may also load a release from jsDelivr `/gh/` through an
+import map in every browser. The browser tier runs Chromium alone; Firefox and WebKit are untested.
 
 ## Development
 
@@ -132,8 +132,7 @@ in-memory sequence and for `natsSequence` against the pinned nats-server, tsc's 
 code in a declaration file, the layer's import rules, and a pack of the build. The browser tier
 runs the router and the upload in the pinned `chrome-headless-shell`, on the driver and server of
 [web-tooling](https://github.com/standards-lab/web-tooling), a devDependency at its release tag,
-and the uploader against `test/server`, a Go server over go-web-sdk's upload handler: mise pins
-Go, and `mise run install` downloads the server's module.
+and the uploader against `test/server`, a Go server over go-web-sdk's upload handler.
 
 The check lints with ESLint, Prettier, shellcheck, actionlint, gofmt and go vet on `test/server`,
 and marathon's lint-context and lint-references. CI runs `mise run install` and the check on each

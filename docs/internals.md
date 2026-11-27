@@ -75,13 +75,14 @@ completion's Result once one arrives.
   rather than read in part.
 - **Retries.** An append that gets no response, a 429, or a 5xx leaves the offset unknown: the
   server may have committed some of it. The next try reads the offset with a HEAD and resumes from
-  there, so nothing is sent twice and nothing skipped. A 409 names the offset in its Upload-Offset,
-  which the next append starts from, and a HEAD reads it when it doesn't. A 413 whose Upload-Limit
-  shrinks the max-append-size below the chunk resends a smaller one. Each failure that advances
-  nothing counts against `attempts`, and an append the server commits starts the count again, so a
-  long upload over a flaky network goes on while it makes progress and gives up only when it
-  stops. `delay` is waited before each repeat. Any other failing status is final: the server has
-  told the client the request is wrong, and repeating it would be wrong again.
+  there, so the server commits no byte twice and skips none. A 409 names the offset in its
+  Upload-Offset, which the next append starts from, and a HEAD reads it when it doesn't. A 413
+  whose Upload-Limit shrinks the max-append-size below the chunk resends a smaller one. Each
+  failure that advances nothing counts against `attempts`, and an append the server commits starts
+  the count again, so a long upload over a flaky network goes on while it makes progress and gives
+  up only when it stops. The uploader waits `delay` before each repeat. Any other failing status is
+  final: the server has told the client the request is wrong, and repeating it would be wrong
+  again.
 - **One request in flight.** An `Upload` queues its sends and cancels and runs one at a time, so
   no two appends race for the same offset and no HEAD reads an offset an append in flight is
   moving.
@@ -94,10 +95,9 @@ completion's Result once one arrives.
   that fails, the next report drops back to the offset the server holds.
 - **XMLHttpRequest.** Appends go over XMLHttpRequest, not fetch: fetch reports no upload progress,
   and a streamed request body, which could count its own bytes, needs HTTP/2 and half-duplex
-  support a server may not give. fetch also never shows an informational response, so the draft's
-  104 (Upload Resumption Supported) interim responses are invisible to either API; the client
-  relies on the final response's headers alone. The creation, the HEAD, and the DELETE carry no
-  content and go over fetch.
+  support a server may not give. Neither API exposes an informational response, so the client
+  never sees the draft's 104 (Upload Resumption Supported) and relies on the final response's
+  headers alone. The creation, the HEAD, and the DELETE carry no content and go over fetch.
 - **Open.** `open` sends no whole-file digest: the server checks the creation's Repr-Digest when
   the upload completes, so a different file fails there with the server's problem, rather than the
   client hashing the whole file again before it resumes.

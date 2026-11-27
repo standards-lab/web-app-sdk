@@ -19,8 +19,8 @@ This page holds the reasoning behind the repository's configuration and tests. T
 - **go** builds the browser tier's upload server, `test/server`, a Go module of its own that
   requires go-web-sdk. `mise run install` downloads the module into Go's module cache, and the
   browser tier builds it from the cache alone (`GOPROXY=off`), so the check reads no network. The
-  preflight for the browser tier compares the installed go with the pin and lists the module's
-  packages offline, failing, naming `mise run install`, when either is missing.
+  browser tier's preflight fails when the installed go isn't the pin, and names `mise run install`
+  when go is missing or the module isn't in the cache.
 - **actionlint** shellchecks each workflow's `run:` block too, with the pinned shellcheck.
 - `types:test` depends on `build`: the tests import the package by its name, which resolves to
   `dist/`'s declarations.
@@ -54,12 +54,12 @@ repository's latest release. typescript is held to the newest version typescript
 range accepts. An optional peer's caret range must admit its package's latest release, so an app
 can install it beside the SDK, by the release test's own rule, `caretAdmits`.
 
-`mise.toml`'s go is a mise tool like the rest. The test server's module reports each direct
-requirement behind its latest, as `go list -m -u` finds it, and its go directive when it is
-behind the latest Go minor, which `mise latest go` gives. The uploader's draft revision is read
-from `src/upload.ts`'s `DRAFT_REVISION` and compared with the revision datatracker gives for
-draft-ietf-httpbis-resumable-upload, or the RFC once the draft becomes one: a new revision is a
-change to the protocol, which the uploader and go-web-sdk's handler move to together.
+The script reports `mise.toml`'s go as it reports every mise tool. For the test server's module,
+it reports each direct requirement behind its latest, as `go list -m -u` finds it, and the go
+directive when it isn't the latest Go minor, which `mise latest go` gives. It reads the uploader's
+draft revision from `src/upload.ts`'s `DRAFT_REVISION` and compares it with the revision
+datatracker gives for draft-ietf-httpbis-resumable-upload, or the RFC once the draft becomes one.
+A new revision changes the protocol, so the uploader and go-web-sdk's handler move to it together.
 
 ## Lint
 
@@ -134,13 +134,13 @@ and the in-memory sequence, are test code the package never exports.
   builds it and starts it on a free loopback port. Its controls, under `/control/`, are
   `test/server/main.go`'s: a fault switch that fires on the next requests it applies to (a 503, a
   429, a stall, a creation's connection closed in place of its 201, an append's connection closed
-  halfway through its content, a HEAD's garbled Upload-Offset, and a rejected completion); a
-  bearer token every upload request must carry; the handler's max-append-size; the log of upload
-  requests, each with its headers and arrival time; and an upload's state, with the SHA-256 of
-  the bytes it stored. The server keeps no connection alive: Chrome resends a request whose reused
-  keep-alive connection closes, so a dropped append would never reach the uploader. The reload
-  test throttles the page's network through the DevTools Protocol and reloads while an append is
-  in flight. The SHA-256's unit suite checks it against FIPS 180-4's examples, NIST's
+  halfway through its content, a HEAD's garbled Upload-Offset, and a completion answered 422 or
+  503); a bearer token every upload request must carry; the handler's max-append-size; the log of
+  upload requests, each with its headers and arrival time; and an upload's state, with the SHA-256
+  of the bytes it stored. The server keeps no connection alive: Chrome resends a request whose
+  reused keep-alive connection closes, so a dropped append would never reach the uploader. The
+  reload test throttles the page's network through the DevTools Protocol and reloads while an
+  append is in flight. The SHA-256's unit suite checks it against FIPS 180-4's examples, NIST's
   vectors, and `node:crypto`, and the browser tier against `crypto.subtle`.
 - **Router.** The browser tier drives `test/fixtures/router.html` with real clicks and history
   traversals through the DevTools Protocol. The server sends the shell page for every path with no

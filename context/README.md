@@ -1,10 +1,11 @@
 # web-app-sdk context
 
 web-app-sdk is what a web application is built with beside web-foundation and web-components,
-depending on neither: routing, talking to a go-web-sdk service, authenticating, and following a
-service's events. Its API client returns a `Result` whose failure is go-web-sdk's RFC 9457
-problem, and its event sequence resumes by an opaque cursor, so an application survives reloads
-and reconnects without its own protocol code.
+depending on neither: routing, talking to a go-web-sdk service, authenticating, following a
+service's events, and sending it large files that survive a dropped connection or a reload. Its
+API client returns a `Result` whose failure is go-web-sdk's RFC 9457 problem, and its event
+sequence resumes by an opaque cursor, so an application survives reloads and reconnects without
+its own protocol code.
 
 It is a package under the `@standards-lab` scope, released by a plain
 `vX.Y.Z` tag. Its goals live in the coordinator's roadmap (`standards-lab/roadmap/index.toml`,
@@ -24,3 +25,4 @@ The package's lineage is in the workspace's [references catalog](https://github.
 - **Domain services** (built): [src/service.ts](../src/service.ts).
 - **Events** (built): [src/events.ts](../src/events.ts) and
   [src/events/nats.ts](../src/events/nats.ts).
+- **Resumable upload** (built): [src/upload.ts](../src/upload.ts).
