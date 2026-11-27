@@ -135,9 +135,9 @@ runs the router and the upload in the pinned `chrome-headless-shell`, on the dri
 and the uploader against `test/server`, a Go server over go-web-sdk's upload handler: mise pins
 Go, and `mise run install` downloads the server's module.
 
-The check lints with ESLint, Prettier, shellcheck, actionlint, and marathon's lint-context and
-lint-references. CI runs `mise run install` and the check on each pull request to main and each
-push to it.
+The check lints with ESLint, Prettier, shellcheck, actionlint, gofmt and go vet on `test/server`,
+and marathon's lint-context and lint-references. CI runs `mise run install` and the check on each
+pull request to main and each push to it.
 
 [docs/development.md](https://github.com/standards-lab/web-app-sdk/blob/main/docs/development.md)
 holds the reasoning behind the configuration and the tests, and
