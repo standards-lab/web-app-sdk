@@ -14,7 +14,7 @@
 //     append at each offset of an upload once half its content has arrived, before the handler
 //     commits any of it; "garble-offset" answers a HEAD with Upload-Offset 1.5;
 //     "reject-complete" answers the completing request a 422 problem, with Upload-Complete: ?1, in
-//     place of its 200. A token makes every upload request without Authorization: Bearer <token>
+//     place of its 200; "fail-complete" answers it a 503 problem the same way. A token makes every upload request without Authorization: Bearer <token>
 //     a 401 problem. A positive limit is the handler's max-append-size from then on, and 0
 //     restores -limit's.
 //   - GET /control/requests answers every upload request since the last read, in order, as JSON
@@ -225,9 +225,13 @@ func (s *server) state(w http.ResponseWriter, r *http.Request) {
 func (s *server) complete(w http.ResponseWriter, _ *http.Request, f upload.File, content io.Reader) error {
 	s.mu.Lock()
 	reject := s.fire("reject-complete")
+	fail := s.fire("fail-complete")
 	s.mu.Unlock()
 	if reject {
 		return web.Problem{Status: http.StatusUnprocessableEntity, Detail: "the test server rejects the file"}
+	}
+	if fail {
+		return web.Problem{Status: http.StatusServiceUnavailable, Detail: "the test server cannot keep the file"}
 	}
 	size, sum, err := hash(content)
 	if err != nil {

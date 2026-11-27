@@ -339,6 +339,27 @@ function trail({ method, headers }: { method: string; headers: Record<string, st
   return method === "PATCH" ? `PATCH ${headers["upload-offset"]}` : method;
 }
 
+async function throttled<T>(uploadThroughput: number, run: () => Promise<T>): Promise<T> {
+  await page.cdp("Network.enable");
+  await page.cdp("Network.emulateNetworkConditions", {
+    offline: false,
+    latency: 0,
+    downloadThroughput: -1,
+    uploadThroughput,
+  });
+  try {
+    return await run();
+  } finally {
+    await page.cdp("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 0,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+    });
+    await page.cdp("Network.disable");
+  }
+}
+
 function rising(progress: [number, number][], from: number, total: number) {
   assert.deepEqual(progress[0], [from, total]);
   assert.deepEqual(progress.at(-1), [total, total]);
@@ -396,22 +417,27 @@ describe("send", () => {
     }
   });
 
-  test("resolves to a completion's 4xx problem, sent once", async () => {
-    const location = await prepare({ size: 1000, attempts: 3 });
-    await server.configure({ fault: "reject-complete" });
-    const { results } = await send();
-    assert.deepEqual(results[0], {
-      ok: false,
-      problem: {
-        type: "about:blank",
-        status: 422,
-        title: "Unprocessable Entity",
-        detail: "the test server rejects the file",
-        instance: new URL(location).pathname,
-      },
+  for (const [fault, status, title, detail] of [
+    ["reject-complete", 422, "Unprocessable Entity", "the test server rejects the file"],
+    ["fail-complete", 503, "Service Unavailable", "the test server cannot keep the file"],
+  ] as const) {
+    test(`resolves to a completion's ${status} problem, sent once`, async () => {
+      const location = await prepare({ size: 1000, attempts: 3 });
+      await server.configure({ fault });
+      const { results } = await send();
+      assert.deepEqual(results[0], {
+        ok: false,
+        problem: {
+          type: "about:blank",
+          status,
+          title,
+          detail,
+          instance: new URL(location).pathname,
+        },
+      });
+      await appends(location, [1000]);
     });
-    await appends(location, [1000]);
-  });
+  }
 
   test("carries the provider's token, refreshed once on a 401", async () => {
     await prepare({ size: 1000, token: "stale", fresh: "fresh" });
@@ -445,6 +471,37 @@ describe("send after an append fails", () => {
       `PATCH ${2 * MiB}`,
     ]);
     assert.equal(most, 1);
+  });
+
+  test("reports progress back at the server's offset after an append drops mid-chunk", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size, attempts: 2 });
+    await server.configure({ fault: "drop-append", count: 2 });
+    const { results, progress } = await throttled(8 * MiB, send);
+    completed(results[0], location, size);
+    assert.deepEqual((await server.requests()).map(trail), [
+      "PATCH 0",
+      "HEAD",
+      "PATCH 0",
+      `PATCH ${MiB}`,
+      "HEAD",
+      `PATCH ${MiB}`,
+      `PATCH ${2 * MiB}`,
+    ]);
+    assert.deepEqual(progress[0][0], [0, size]);
+    assert.deepEqual(progress[0].at(-1), [size, size]);
+    const drops: [number, number][] = [];
+    for (let at = 1; at < progress[0].length; at++) {
+      const [sent, total] = progress[0][at];
+      const before = progress[0][at - 1][0];
+      assert.equal(total, size);
+      if (sent < before) drops.push([before, sent]);
+    }
+    assert.equal(drops.length, 2, `progress: ${progress[0]}`);
+    for (const [i, [before, sent]] of drops.entries()) {
+      assert.equal(sent, i * MiB, `progress: ${progress[0]}`);
+      assert.ok(before > sent, `progress: ${progress[0]}`);
+    }
   });
 
   for (const [fault, status] of [
@@ -713,14 +770,7 @@ describe("open", () => {
   test("after a page reload mid-upload, completes from the server's offset", async () => {
     const size = 4 * MiB;
     const location = await prepare({ size });
-    await page.cdp("Network.enable");
-    await page.cdp("Network.emulateNetworkConditions", {
-      offline: false,
-      latency: 0,
-      downloadThroughput: -1,
-      uploadThroughput: 4 * MiB,
-    });
-    try {
+    await throttled(4 * MiB, async () => {
       await page.evaluate("begin()");
       const deadline = Date.now() + 10_000;
       while (((await server.state(location))?.offset ?? 0) < MiB) {
@@ -728,15 +778,7 @@ describe("open", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       await page.goto(`${server.origin}/test/fixtures/uploader.html`);
-    } finally {
-      await page.cdp("Network.emulateNetworkConditions", {
-        offline: false,
-        latency: 0,
-        downloadThroughput: -1,
-        uploadThroughput: -1,
-      });
-      await page.cdp("Network.disable");
-    }
+    });
     const offset = (await server.state(location))?.offset ?? 0;
     assert.ok(offset >= MiB && offset < size, `the reload left the offset at ${offset}`);
     const sent = (await server.requests()).filter(({ method }) => method === "PATCH");

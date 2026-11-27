@@ -20,7 +20,8 @@ export type Fault =
   | "lose-created"
   | "drop-append"
   | "garble-offset"
-  | "reject-complete";
+  | "reject-complete"
+  | "fail-complete";
 
 /** One upload request the server received, each header under its lowercase name, and the
  * milliseconds since the Unix epoch when it arrived. */
