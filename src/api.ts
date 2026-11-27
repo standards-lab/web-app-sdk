@@ -7,6 +7,7 @@ import { anonymous } from "./auth.ts";
 import { EventStreamParser } from "./eventstream.ts";
 import {
   authorizer,
+  decode,
   failure,
   join,
   mediaType,
@@ -328,36 +329,4 @@ function encode(body: unknown, headers: Headers): XMLHttpRequestBodyInit | undef
   if (json === undefined) throw new Unencodable();
   headers.set("Content-Type", "application/json");
   return json;
-}
-
-function isJSON(type: string): boolean {
-  return type === "application/json" || type.endsWith("+json");
-}
-
-async function decode<T>(response: Response, as?: "text"): Promise<Result<T>> {
-  if (!response.ok) return { ok: false, problem: await problem(response) };
-  if (as === "text") return { ok: true, data: (await response.text()) as T };
-  const type = mediaType(response);
-  const blob = await response.blob();
-  if (response.status === 204 || response.status === 205 || blob.size === 0) {
-    return { ok: true, data: undefined as T };
-  }
-  if (isJSON(type)) {
-    const text = await blob.text();
-    try {
-      return { ok: true, data: JSON.parse(text) as T };
-    } catch (error) {
-      return {
-        ok: false,
-        problem: {
-          type: "urn:standards-lab:problem:decode",
-          status: response.status,
-          title: "Response not decodable",
-          detail: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  }
-  if (type.startsWith("text/")) return { ok: true, data: (await blob.text()) as T };
-  return { ok: true, data: blob as T };
 }

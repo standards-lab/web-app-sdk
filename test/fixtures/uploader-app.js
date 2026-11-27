@@ -99,3 +99,53 @@ window.digests = async (sizes) => {
   }
   return out;
 };
+
+let current;
+
+window.prepare = async ({ size, chunkSize, token, fresh, attempts = 1 }) => {
+  const auth = token === undefined && fresh === undefined ? undefined : provider(token, fresh);
+  const uploader = createUploader({ base: "/", auth, attempts, delay: 0, chunkSize });
+  const result = await uploader.create(
+    "uploads",
+    file("file", size, "report.bin", "application/octet-stream"),
+  );
+  current = result.ok ? { upload: result.data, auth } : undefined;
+  return result.ok ? { ok: true, data: { location: result.data.location } } : result;
+};
+
+window.send = async ({ sends = 1, overlap = false, abort } = {}) => {
+  let inFlight = 0;
+  let most = 0;
+  const transmit = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (...args) {
+    inFlight++;
+    most = Math.max(most, inFlight);
+    this.addEventListener("loadend", () => inFlight--);
+    return transmit.apply(this, args);
+  };
+  const progress = [];
+  const one = (i) => {
+    const reports = [];
+    progress.push(reports);
+    const controller = new AbortController();
+    const signal = i === 0 && abort === "before" ? AbortSignal.abort() : controller.signal;
+    return current.upload.send({
+      signal,
+      progress: (sent, total) => {
+        reports.push([sent, total]);
+        if (i === 0 && abort === "progress" && sent > 0) controller.abort();
+      },
+    });
+  };
+  try {
+    let results = [];
+    if (overlap) {
+      results = await Promise.all(Array.from({ length: sends }, (_, i) => one(i)));
+    } else {
+      for (let i = 0; i < sends; i++) results.push(await one(i));
+    }
+    return { results, progress, most, refreshes: current.auth?.refreshes ?? 0 };
+  } finally {
+    XMLHttpRequest.prototype.send = transmit;
+  }
+};

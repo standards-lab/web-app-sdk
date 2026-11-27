@@ -1,10 +1,10 @@
 // The SDK's internal transport, which the API client and the uploader share: the authorizer that
 // sends a request with the provider's bearer token and once more after a 401 with the refreshed
 // one; a path joined under a base; the XMLHttpRequest send that reports a body's progress and
-// resolves to a Response; and the problems made from a failing response and from a request that
-// failed.
+// resolves to a Response; the problems made from a failing response and from a request that
+// failed; and the Result a response decodes to.
 
-import type { Problem } from "./api.ts";
+import type { Problem, Result } from "./api.ts";
 import type { TokenProvider } from "./auth.ts";
 
 /** Sends a request through `send`, with `Authorization: Bearer <token>` set on `headers` when the
@@ -197,4 +197,40 @@ export function failure(error: unknown, signal: AbortSignal | undefined): Proble
     title: "Network error",
     detail: error instanceof Error ? error.message : String(error),
   };
+}
+
+function isJSON(type: string): boolean {
+  return type === "application/json" || type.endsWith("+json");
+}
+
+/** The Result a response is, as the API client resolves a call to it: a failing response its
+ * problem; under `as: "text"` the body's text; otherwise the body decoded by its content type, JSON
+ * (application/json or any +json type) parsed, text/* a string, any other a Blob, and no body (a
+ * 204 or 205, or an empty body) undefined. A JSON body that doesn't parse is the decode problem. */
+export async function decode<T>(response: Response, as?: "text"): Promise<Result<T>> {
+  if (!response.ok) return { ok: false, problem: await problem(response) };
+  if (as === "text") return { ok: true, data: (await response.text()) as T };
+  const type = mediaType(response);
+  const blob = await response.blob();
+  if (response.status === 204 || response.status === 205 || blob.size === 0) {
+    return { ok: true, data: undefined as T };
+  }
+  if (isJSON(type)) {
+    const text = await blob.text();
+    try {
+      return { ok: true, data: JSON.parse(text) as T };
+    } catch (error) {
+      return {
+        ok: false,
+        problem: {
+          type: "urn:standards-lab:problem:decode",
+          status: response.status,
+          title: "Response not decodable",
+          detail: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }
+  if (type.startsWith("text/")) return { ok: true, data: (await blob.text()) as T };
+  return { ok: true, data: blob as T };
 }

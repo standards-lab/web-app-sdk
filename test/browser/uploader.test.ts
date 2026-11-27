@@ -267,3 +267,212 @@ describe("create's signal", () => {
     });
   });
 });
+
+const MiB = 1024 * 1024;
+
+interface Prepared {
+  size: number;
+  chunkSize?: number;
+  token?: string;
+  fresh?: string;
+  attempts?: number;
+}
+
+interface Completed {
+  id: string;
+  mediaType: string;
+  digest: string;
+  name: string;
+  length: number;
+}
+
+interface Sent {
+  results: Result<Completed>[];
+  progress: [number, number][][];
+  most: number;
+  refreshes: number;
+}
+
+async function prepare(spec: Prepared): Promise<string> {
+  const location = located(await page.evaluate(`prepare(${JSON.stringify(spec)})`));
+  await server.requests();
+  return location;
+}
+
+const send = (spec: { sends?: number; overlap?: boolean; abort?: "before" | "progress" } = {}) =>
+  page.evaluate(`send(${JSON.stringify(spec)})`) as Promise<Sent>;
+
+function completed(result: Result<Completed>, location: string, size: number) {
+  assert.ok(result.ok, JSON.stringify(result.ok ? undefined : result.problem));
+  assert.deepEqual(result.data, {
+    id: new URL(location).pathname.replace(/^\/uploads\//, ""),
+    mediaType: "application/octet-stream",
+    digest: sha256(bytes(size)).toString("hex"),
+    name: "report.bin",
+    length: size,
+  });
+}
+
+async function held(location: string, size: number) {
+  const state = await server.state(location);
+  assert.equal(state?.complete, true);
+  assert.equal(state?.size, size);
+  assert.equal(state?.sha256, sha256(bytes(size)).toString("hex"));
+  assert.equal(state?.sha256, state?.digest);
+}
+
+async function appends(location: string, chunks: number[]) {
+  const requests = await server.requests();
+  const file = bytes(chunks.reduce((sum, chunk) => sum + chunk, 0));
+  assert.equal(requests.length, chunks.length);
+  let from = 0;
+  for (const [i, { method, path, headers }] of requests.entries()) {
+    const chunk = file.subarray(from, from + chunks[i]);
+    assert.equal(method, "PATCH");
+    assert.equal(path, new URL(location).pathname);
+    assert.equal(headers["content-type"], "application/partial-upload");
+    assert.equal(headers["content-length"], String(chunks[i]));
+    assert.equal(headers["upload-offset"], String(from));
+    assert.equal(headers["upload-complete"], i === chunks.length - 1 ? "?1" : "?0");
+    assert.equal(headers["content-digest"], `sha-256=:${sha256(chunk).toString("base64")}:`);
+    assert.equal(headers["upload-draft-interop-version"], "11");
+    from += chunks[i];
+  }
+}
+
+function rising(progress: [number, number][], from: number, total: number) {
+  assert.deepEqual(progress[0], [from, total]);
+  assert.deepEqual(progress.at(-1), [total, total]);
+  for (let at = 1; at < progress.length; at++) {
+    assert.equal(progress[at][1], total);
+    assert.ok(progress[at][0] >= progress[at - 1][0], `progress went back: ${progress}`);
+  }
+}
+
+describe("send", () => {
+  test("sends a 16 MB file in chunks of chunkSize, each PATCH its chunk's", async () => {
+    await server.configure({ limit: 8 * MiB });
+    const size = 16 * MiB;
+    const location = await prepare({ size, chunkSize: 5 * MiB });
+    const { results, most } = await send();
+    completed(results[0], location, size);
+    await appends(location, [5 * MiB, 5 * MiB, 5 * MiB, MiB]);
+    await held(location, size);
+    assert.equal(most, 1);
+  });
+
+  test("bounds each chunk by a smaller max-append-size the creation announced", async () => {
+    const size = 3 * MiB + MiB / 2;
+    const location = await prepare({ size, chunkSize: 3 * MiB });
+    completed((await send()).results[0], location, size);
+    await appends(location, [MiB, MiB, MiB, MiB / 2]);
+    await held(location, size);
+  });
+
+  test("without a chunkSize, sends chunks of the announced max-append-size", async () => {
+    await server.configure({ limit: 2 * MiB });
+    const size = 5 * MiB;
+    const location = await prepare({ size });
+    completed((await send()).results[0], location, size);
+    await appends(location, [2 * MiB, 2 * MiB, MiB]);
+  });
+
+  test("completes an empty file with one PATCH carrying no content", async () => {
+    const location = await prepare({ size: 0 });
+    completed((await send()).results[0], location, 0);
+    await appends(location, [0]);
+    await held(location, 0);
+  });
+
+  test("reports progress from the server's offset to the total, never back", async () => {
+    const size = 4 * MiB;
+    await prepare({ size });
+    const { progress } = await send();
+    rising(progress[0], 0, size);
+    for (const from of [0, MiB, 2 * MiB, 3 * MiB]) {
+      assert.ok(
+        progress[0].some(([sent]) => sent === from),
+        `no report at the append from ${from}: ${progress[0]}`,
+      );
+    }
+  });
+
+  test("resolves to a completion's 4xx problem, sent once", async () => {
+    const location = await prepare({ size: 1000, attempts: 3 });
+    await server.configure({ fault: "reject-complete" });
+    const { results } = await send();
+    assert.deepEqual(results[0], {
+      ok: false,
+      problem: {
+        type: "about:blank",
+        status: 422,
+        title: "Unprocessable Entity",
+        detail: "the test server rejects the file",
+        instance: new URL(location).pathname,
+      },
+    });
+    await appends(location, [1000]);
+  });
+
+  test("carries the provider's token, refreshed once on a 401", async () => {
+    await prepare({ size: 1000, token: "stale", fresh: "fresh" });
+    await server.configure({ token: "fresh" });
+    const { results, refreshes } = await send();
+    assert.equal(results[0].ok, true);
+    assert.equal(refreshes, 1);
+    assert.deepEqual(
+      (await server.requests()).map(({ method, headers }) => [method, headers.authorization]),
+      [
+        ["PATCH", "Bearer stale"],
+        ["PATCH", "Bearer fresh"],
+      ],
+    );
+  });
+});
+
+describe("send after an append fails", () => {
+  test("is its problem, and a later send continues from the server's offset", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size });
+    await server.configure({ fault: "unavailable" });
+    const { results, progress } = await send({ sends: 2 });
+    assert.deepEqual(results[0], {
+      ok: false,
+      problem: { type: "about:blank", status: 503, title: "Service Unavailable" },
+    });
+    completed(results[1], location, size);
+    rising(progress[1], 0, size);
+    await held(location, size);
+  });
+
+  test("runs sends made at once one after another, never overlapping", async () => {
+    const size = 3 * MiB;
+    const location = await prepare({ size });
+    await server.configure({ fault: "unavailable" });
+    const { results, most } = await send({ sends: 2, overlap: true });
+    assert.equal(results[0].ok, false);
+    completed(results[1], location, size);
+    assert.equal(most, 1);
+  });
+});
+
+describe("send's signal", () => {
+  test("aborted before it starts is the abort problem, nothing sent", async () => {
+    await prepare({ size: 1000 });
+    const { results } = await send({ abort: "before" });
+    assert.deepEqual(results[0], {
+      ok: false,
+      problem: { type: "urn:standards-lab:problem:abort", status: 0, title: "Request aborted" },
+    });
+    assert.deepEqual(await server.requests(), []);
+  });
+
+  test("aborted while an append is in flight is the abort problem", async () => {
+    await prepare({ size: 3 * MiB });
+    const { results } = await send({ abort: "progress" });
+    assert.deepEqual(results[0], {
+      ok: false,
+      problem: { type: "urn:standards-lab:problem:abort", status: 0, title: "Request aborted" },
+    });
+  });
+});

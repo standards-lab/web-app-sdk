@@ -12,7 +12,7 @@ import { freePort, start } from "@standards-lab/web-tooling/process.js";
 const root = join(import.meta.dirname, "../../..");
 
 /** A fault the server's switch fires once, on the first upload request it applies to. */
-export type Fault = "unavailable" | "lose-created" | "drop-append";
+export type Fault = "unavailable" | "lose-created" | "drop-append" | "reject-complete";
 
 /** One upload request the server received, each header under its lowercase name. */
 export interface Received {
@@ -63,9 +63,14 @@ export async function startServer() {
 
     return {
       origin,
-      /** Arms the fault and sets the token every upload request must carry; none clears each. */
-      async configure({ fault, token }: { fault?: Fault; token?: string } = {}) {
-        await control("PUT", "", { fault: fault ?? "", token: token ?? "" });
+      /** Arms the fault, sets the token every upload request must carry, and sets the handler's
+       * max-append-size; none clears each, the max-append-size back to the server's default. */
+      async configure({
+        fault,
+        token,
+        limit,
+      }: { fault?: Fault; token?: string; limit?: number } = {}) {
+        await control("PUT", "", { fault: fault ?? "", token: token ?? "", limit: limit ?? 0 });
       },
       /** The upload requests since the last call. */
       async requests(): Promise<Received[]> {
