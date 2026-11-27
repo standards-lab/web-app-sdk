@@ -16,6 +16,11 @@ This page holds the reasoning behind the repository's configuration and tests. T
   download by its checksum, so a version bumped without its own sha256 installs the old build; the
   preflight compares the installed browser's version with the pin and fails, naming the sha256, when
   they differ.
+- **go** builds the browser tier's upload server, `test/server`, a Go module of its own that
+  requires go-web-sdk. `mise run install` downloads the module into Go's module cache, and the
+  browser tier builds it from the cache alone (`GOPROXY=off`), so the check reads no network. The
+  browser tier's preflight fails when the installed go isn't the pin, and names `mise run install`
+  when go is missing or the module isn't in the cache.
 - **actionlint** shellchecks each workflow's `run:` block too, with the pinned shellcheck.
 - `types:test` depends on `build`: the tests import the package by its name, which resolves to
   `dist/`'s declarations.
@@ -48,6 +53,13 @@ repository's release tag, which the registry doesn't hold, so it is compared wit
 repository's latest release. typescript is held to the newest version typescript-eslint's peer
 range accepts. An optional peer's caret range must admit its package's latest release, so an app
 can install it beside the SDK, by the release test's own rule, `caretAdmits`.
+
+The script reports `mise.toml`'s go as it reports every mise tool. For the test server's module,
+it reports each direct requirement behind its latest, as `go list -m -u` finds it, and the go
+directive when it isn't the latest Go minor, which `mise latest go` gives. It reads the uploader's
+draft revision from `src/upload.ts`'s `DRAFT_REVISION` and compares it with the revision
+datatracker gives for draft-ietf-httpbis-resumable-upload, or the RFC once the draft becomes one.
+A new revision changes the protocol, so the uploader and go-web-sdk's handler move to it together.
 
 ## Lint
 
@@ -98,8 +110,8 @@ code and JSON files back in. Prettier also skips what `.gitignore` lists.
 ## Tests
 
 The tiers test the package as a consumer imports it: by its name, through `package.json`'s exports,
-over the `dist/` that `mise run build` writes. The event-stream parser is internal, so its suite
-imports the built module by its path in `dist/`.
+over the `dist/` that `mise run build` writes. The event-stream parser, the SHA-256, and the
+structured fields are internal, so their suites import the built modules by their paths in `dist/`.
 
 The tests are TypeScript that `node --test` runs under Node's type stripping, so
 `tsconfig.test.json`'s `erasableSyntaxOnly` holds them to syntax the stripping erases. They import
@@ -114,6 +126,22 @@ and the in-memory sequence, are test code the package never exports.
   Node has no XMLHttpRequest, so the upload's own cases run in the browser tier, against
   `test/browser/support/upload.ts`'s routes; its 16 MB body, read slowly, is past what the loopback
   socket's buffers take at once, so the browser reports progress several times.
+- **Uploader.** The browser tier drives `test/fixtures/uploader.html` against `test/server`, a Go
+  test server that mounts go-web-sdk v0.19.0's `upload.Handler`, over its in-memory store, at
+  `/uploads`, so the uploader is proven against the handler apps run rather than a
+  reimplementation of the draft. The same server serves the repository's `.html`, `.js`, and
+  `.css` files, so the fixture and the uploads share an origin. `test/browser/support/server.ts`
+  builds it and starts it on a free loopback port. Its controls, under `/control/`, are
+  `test/server/main.go`'s: a fault switch that fires on the next requests it applies to (a 503, a
+  429, a stall, a creation's connection closed in place of its 201, an append's connection closed
+  halfway through its content, a HEAD's garbled Upload-Offset, and a completion answered 422 or
+  503); a bearer token every upload request must carry; the handler's max-append-size; the log of
+  upload requests, each with its headers and arrival time; and an upload's state, with the SHA-256
+  of the bytes it stored. The server keeps no connection alive: Chrome resends a request whose
+  reused keep-alive connection closes, so a dropped append would never reach the uploader. The
+  reload test throttles the page's network through the DevTools Protocol and reloads while an
+  append is in flight. The SHA-256's unit suite checks it against FIPS 180-4's examples, NIST's
+  vectors, and `node:crypto`, and the browser tier against `crypto.subtle`.
 - **Router.** The browser tier drives `test/fixtures/router.html` with real clicks and history
   traversals through the DevTools Protocol. The server sends the shell page for every path with no
   extension, as an app's server does for each deep link. The browser's own reload never reaches

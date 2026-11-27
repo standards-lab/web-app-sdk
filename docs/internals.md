@@ -6,8 +6,10 @@ comments state. The [README](../README.md#use) lists what each subpath exports.
 ## API client
 
 `src/api.ts` sends a call and a stream over fetch and an upload over XMLHttpRequest, whose progress
-fetch doesn't report. Every request goes through one function that sends it with the provider's
-token and, after a 401, once more with the refreshed token. The client holds the refresh pending,
+fetch doesn't report. The code the uploader shares with it is in the internal `src/transport.ts`:
+the token's authorizer, the path join, the XMLHttpRequest send, the problems, and the decoding of
+a response. Every request goes through the authorizer, which sends it with the provider's token
+and, after a 401, once more with the refreshed token. The client holds the refresh pending,
 and every 401 that arrives meanwhile awaits it rather than starting its own. A provider that
 rejects is treated as having no token, so the client never rejects for it.
 
@@ -51,6 +53,54 @@ with URLPattern, with no matcher of its own.
   The error element failing too leaves the outlet empty.
 - **Params.** Only named groups become params: an unnamed group's key is its index, never an
   attribute's name, and an optional group that didn't match is undefined.
+
+## Uploader
+
+`src/upload.ts` implements draft-ietf-httpbis-resumable-upload-16 at interop version 11, the
+revision go-web-sdk v0.19.0's upload handler serves; `DRAFT_REVISION` names it so `mise run
+currency` can tell when the draft moves on. Each upload is an `Upload` whose state is the server's
+offset, whether that offset is known, the max-append-size the server last announced, and the
+completion's Result once one arrives.
+
+- **SHA-256.** The creation carries the whole file's SHA-256 as Repr-Digest, and each append its
+  chunk's as Content-Digest. `src/sha256.ts` is the SDK's own, fed a piece at a time: SubtleCrypto's
+  `digest` takes the whole input at once, so a large file would be held in memory whole, and it
+  exists only in a secure context, where an app on plain HTTP has none. A library for it would be
+  the SDK's one runtime dependency. `create` reads the file in 4 MiB `Blob.slice` pieces.
+- **Fields.** The draft's headers are RFC 9651 Structured Fields: Upload-Offset and Upload-Length
+  Integers, Upload-Complete a Boolean, Upload-Limit a Dictionary of Integers, and the digests
+  Dictionaries of Byte Sequences. `src/fields.ts` reads and writes the types the draft uses and
+  nothing else. A field that doesn't parse reads as absent, as the draft has a receiver ignore it;
+  an Upload-Limit with an invalid defined member, or a minimum above its maximum, is ignored whole
+  rather than read in part.
+- **Retries.** An append that gets no response, a 429, or a 5xx leaves the offset unknown: the
+  server may have committed some of it. The next try reads the offset with a HEAD and resumes from
+  there, so the server commits no byte twice and skips none. A 409 names the offset in its
+  Upload-Offset, which the next append starts from, and a HEAD reads it when it doesn't. A 413
+  whose Upload-Limit shrinks the max-append-size below the chunk resends a smaller one. Each
+  failure that advances nothing counts against `attempts`, and an append the server commits starts
+  the count again, so a long upload over a flaky network goes on while it makes progress and gives
+  up only when it stops. The uploader waits `delay` before each repeat. Any other failing status is
+  final: the server has told the client the request is wrong, and repeating it would be wrong
+  again.
+- **One request in flight.** An `Upload` queues its sends and cancels and runs one at a time, so
+  no two appends race for the same offset and no HEAD reads an offset an append in flight is
+  moving.
+- **Completion.** The response that completes the upload is remembered, and a later `send`
+  resolves to it without a request: go-web-sdk's handler deletes an upload once it completes, so a
+  HEAD would only answer 404. A HEAD that says the upload is complete means its completion's
+  response was lost, which the client can't recover, so it is the decode problem.
+- **Progress.** `progress` reports the server's offset plus what has gone of the append in flight,
+  the bytes sent rather than the bytes committed, so the bar moves during a chunk. After an append
+  that fails, the next report drops back to the offset the server holds.
+- **XMLHttpRequest.** Appends go over XMLHttpRequest, not fetch: fetch reports no upload progress,
+  and a streamed request body, which could count its own bytes, needs HTTP/2 and half-duplex
+  support a server may not give. Neither API exposes an informational response, so the client
+  never sees the draft's 104 (Upload Resumption Supported) and relies on the final response's
+  headers alone. The creation, the HEAD, and the DELETE carry no content and go over fetch.
+- **Open.** `open` sends no whole-file digest: the server checks the creation's Repr-Digest when
+  the upload completes, so a different file fails there with the server's problem, rather than the
+  client hashing the whole file again before it resumes.
 
 ## Event-stream parser
 

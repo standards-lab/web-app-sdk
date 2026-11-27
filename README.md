@@ -1,10 +1,10 @@
 # web-app-sdk
 
 The application SDK of the standards-lab web client stack: the API client and its Result and
-Problem types, the token hook, the router, the domain-service pattern, and the event sequence with
-its NATS adapter. It is a runtime with no runtime dependency, written in TypeScript and shipped as
-ES modules with their type declarations, and is released by git tag. It depends on no other layer
-of the stack.
+Problem types, the token hook, the router, the domain-service pattern, the event sequence with its
+NATS adapter, and the resumable upload client. It is a runtime with no runtime dependency, written
+in TypeScript and shipped as ES modules with their type declarations, and is released by git tag.
+It depends on no other layer of the stack.
 
 ## Install
 
@@ -15,9 +15,9 @@ The build lives only in the tag's tree, so the tag installs with no build step, 
 has no scripts. Install it by its tag:
 
 ```
-pnpm add github:standards-lab/web-app-sdk#v0.1.0
-bun add github:standards-lab/web-app-sdk#v0.1.0
-npm install --allow-git=root github:standards-lab/web-app-sdk#v0.1.0
+pnpm add github:standards-lab/web-app-sdk#v0.2.0
+bun add github:standards-lab/web-app-sdk#v0.2.0
+npm install --allow-git=root github:standards-lab/web-app-sdk#v0.2.0
 ```
 
 npm 12 refuses git dependencies unless `--allow-git` allows them; `root` allows the ones the
@@ -31,15 +31,16 @@ Each GitHub release also carries the tarball.
 
 ## Use
 
-The package is `@standards-lab/web-app-sdk`. It exports the six subpaths below, each a `.js` name
-with a `types` and a `default` condition; its internal modules, such as the event-stream parser,
-aren't importable:
+The package is `@standards-lab/web-app-sdk`. It exports the seven subpaths below, each a `.js`
+name with a `types` and a `default` condition; its internal modules, such as the event-stream
+parser and the uploader's SHA-256, aren't importable:
 
 ```ts
 import { createClient } from "@standards-lab/web-app-sdk/api.js";
 import { createRouter } from "@standards-lab/web-app-sdk/router.js";
 import type { Service } from "@standards-lab/web-app-sdk/service.js";
 import { natsSequence } from "@standards-lab/web-app-sdk/events/nats.js";
+import { createUploader } from "@standards-lab/web-app-sdk/upload.js";
 ```
 
 - `./api.js`: the API client, `createClient` and `Client`. Its calls (`get`, `post`, `put`,
@@ -72,27 +73,57 @@ import { natsSequence } from "@standards-lab/web-app-sdk/events/nats.js";
   binary-mode CloudEvents go-messaging's NATS broker publishes, read over NATS's WebSocket
   transport. It resumes from a cursor with no gap or duplicate, across a server restart too, and
   asks its `TokenProvider` once to refresh a token the server refuses.
+- `./upload.js`: the resumable upload client, `createUploader`, `Uploader`, and `Upload`, for
+  [draft-ietf-httpbis-resumable-upload-16](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-resumable-upload-16)
+  (`DRAFT_REVISION`) at interop version 11 (`INTEROP_VERSION`), as go-web-sdk's upload handler
+  serves it: `create` and `open`, and an `Upload`'s `send` and `cancel`, each resolve to a
+  `Result` and never reject.
 
 `./events/nats.js` imports `@nats-io/nats-core` and `@nats-io/jetstream` (`^3.5.0`), the package's
 optional peer dependencies: install them only to use that subpath. No other subpath imports them.
 
+`createUploader` takes the API client's `base` and `auth`; `attempts`, how many requests in a row
+may fail before an operation gives up; `delay`, the milliseconds before each repeat; and an
+optional `chunkSize`, the most bytes one append carries. `send` appends the file in chunks,
+resuming from the server's offset after a failure, and resolves to the completing response,
+decoded as the API client's calls are. An app keeps the upload's `Location` so that, after a
+reload, `open` resumes it with the same file, which the user picks again:
+
+```ts
+const uploader = createUploader({ attempts: 5, delay: 1000 });
+const saved = sessionStorage.getItem("upload");
+const upload = saved ? await uploader.open(saved, file) : await uploader.create("/files", file);
+if (upload.ok) {
+  sessionStorage.setItem("upload", upload.data.location);
+  const sent = await upload.data.send<StoredFile>({ progress: (sent, total) => show(sent, total) });
+  if (sent.ok) sessionStorage.removeItem("upload");
+}
+```
+
+`progress` counts the bytes sent, so it drops back to the server's offset after an append fails.
+`cancel` deletes the upload; an aborted `send` leaves it to resume.
+
+A server on another origin must expose `Location`, `Upload-Offset`, `Upload-Limit`, and
+`Upload-Complete` in `Access-Control-Expose-Headers`. go-web-sdk's handler sets no CORS headers,
+so an app on the handler's origin needs nothing.
+
 ## Browser support
 
 The runtime targets the browser. The browser floor is Safari 26.2, Firefox 147, and Chromium, set
-by the Navigation API, which the router needs with `URLPattern`. `upload` needs `XMLHttpRequest`;
-where there is none, as on Node, it resolves to the network problem. The SDK imports no CSS module
-script, so a page may also load a release from jsDelivr `/gh/` through an import map in every
-browser. The browser tier runs Chromium alone; Firefox and WebKit are untested.
+by the Navigation API, which the router needs with `URLPattern`. `upload` and an `Upload`'s `send`
+need `XMLHttpRequest`; where there is none, as on Node, they resolve to the network problem. The
+SDK imports no CSS module script, so a page may also load a release from jsDelivr `/gh/` through an
+import map in every browser. The browser tier runs Chromium alone; Firefox and WebKit are untested.
 
 ## Development
 
 Tasks run through [mise](https://mise.jdx.dev):
 
 ```
-mise run install    # the pinned tools, and node_modules with the tooling at its tag; reads the network
+mise run install    # the pinned tools, node_modules with the tooling at its tag, and test/server's Go module; reads the network
 mise run check      # lint, lint-context, lint-references, types, build, and both test tiers; reads no network
 mise run build      # src/ into dist/
-mise run currency   # report every tool, package, and action pin, the tooling's tag, and the peer ranges, behind its latest
+mise run currency   # report every pin behind its latest: tools, packages, actions, the tooling's tag, the peer ranges, test/server's Go module, and the upload draft
 ```
 
 The check runs two test tiers on the build. The unit tier runs under `node --test`: the client
@@ -100,11 +131,12 @@ against a loopback server, the event-stream parser, the event-sequence contract 
 in-memory sequence and for `natsSequence` against the pinned nats-server, tsc's refusal of runtime
 code in a declaration file, the layer's import rules, and a pack of the build. The browser tier
 runs the router and the upload in the pinned `chrome-headless-shell`, on the driver and server of
-[web-tooling](https://github.com/standards-lab/web-tooling), a devDependency at its release tag.
+[web-tooling](https://github.com/standards-lab/web-tooling), a devDependency at its release tag,
+and the uploader against `test/server`, a Go server over go-web-sdk's upload handler.
 
-The check lints with ESLint, Prettier, shellcheck, actionlint, and marathon's lint-context and
-lint-references. CI runs `mise run install` and the check on each pull request to main and each
-push to it.
+The check lints with ESLint, Prettier, shellcheck, actionlint, gofmt and go vet on `test/server`,
+and marathon's lint-context and lint-references. CI runs `mise run install` and the check on each
+pull request to main and each push to it.
 
 [docs/development.md](https://github.com/standards-lab/web-app-sdk/blob/main/docs/development.md)
 holds the reasoning behind the configuration and the tests, and

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fails naming mise run install when a tool a task needs is missing: the node_modules tooling and
 # the NATS adapter's packages, which the build reads, with `browser`, the pinned
-# chrome-headless-shell, and with `nats`, the pinned nats-server.
+# chrome-headless-shell, the pinned go, and test/server's Go module in the module cache, and with
+# `nats`, the pinned nats-server.
 set -euo pipefail
 
 fail() {
@@ -41,8 +42,28 @@ require_browser_at_pin() {
   fi
 }
 
+require_go_at_pin() {
+  local go pin version
+  go=$(mise which go 2>/dev/null) || fail "go"
+  pin=$(mise current go) || return
+  version=$("$go" env GOVERSION) || return
+  if [[ $version != "go$pin" ]]; then
+    echo "preflight: $go isn't go $pin" >&2
+    exit 1
+  fi
+}
+
+require_go_module() {
+  GOWORK=off GOPROXY=off GOFLAGS=-mod=readonly go -C test/server list -deps ./... >/dev/null 2>&1 ||
+    fail "test/server's Go module"
+}
+
 require_node_modules
 case "${1:-}" in
   nats) require_nats_server_at_pin ;;
-  browser) require_browser_at_pin ;;
+  browser)
+    require_browser_at_pin
+    require_go_at_pin
+    require_go_module
+    ;;
 esac

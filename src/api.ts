@@ -5,6 +5,17 @@
 import type { TokenProvider } from "./auth.ts";
 import { anonymous } from "./auth.ts";
 import { EventStreamParser } from "./eventstream.ts";
+import {
+  authorizer,
+  decode,
+  failure,
+  join,
+  mediaType,
+  problem,
+  transmit,
+  undecodable,
+  Unencodable,
+} from "./transport.ts";
 
 /** An RFC 9457 problem document, as go-web-sdk's Problem writes it, with `title` always present:
  * go-web-sdk's Write defaults it to the status phrase, but omits it for a status outside net/http's
@@ -168,15 +179,7 @@ export interface Client {
 /** Makes a client. */
 export function createClient(options: ClientOptions = {}): Client {
   const base = options.base ?? "/api";
-  const auth = options.auth ?? anonymous;
-  let pendingRefresh: Promise<string | undefined> | undefined;
-
-  function refresh(): Promise<string | undefined> {
-    pendingRefresh ??= settle(auth.refresh()).finally(() => {
-      pendingRefresh = undefined;
-    });
-    return pendingRefresh;
-  }
+  const authorize = authorizer(options.auth ?? anonymous);
 
   async function respond(
     path: string,
@@ -193,20 +196,7 @@ export function createClient(options: ClientOptions = {}): Client {
     const headers = new Headers(request.headers);
     if (accept !== undefined) headers.set("Accept", accept);
     const payload = encode(body, headers);
-    const authorized = (token: string | undefined) => {
-      if (token === undefined) headers.delete("Authorization");
-      else headers.set("Authorization", `Bearer ${token}`);
-      return send(url, headers, payload);
-    };
-    let response = await authorized(await settle(auth.token()));
-    if (response.status === 401) {
-      const token = await refresh();
-      if (token !== undefined) {
-        await response.body?.cancel();
-        response = await authorized(token);
-      }
-    }
-    return response;
+    return authorize(headers, () => send(url, headers, payload));
   }
 
   function fetched(
@@ -246,15 +236,7 @@ export function createClient(options: ClientOptions = {}): Client {
       const type = mediaType(response);
       if (type !== "text/event-stream" || response.body === null) {
         await response.body?.cancel();
-        return {
-          ok: false,
-          problem: {
-            type: "urn:standards-lab:problem:decode",
-            status: response.status,
-            title: "Response not decodable",
-            detail: `${type || "no content type"} is not text/event-stream`,
-          },
-        };
+        return undecodable(response, `${type || "no content type"} is not text/event-stream`);
       }
       return { ok: true, data: events(response.body, request.signal) };
     } catch (error) {
@@ -296,56 +278,6 @@ export function createClient(options: ClientOptions = {}): Client {
   };
 }
 
-function transmit(
-  method: string,
-  url: string,
-  headers: Headers,
-  payload: XMLHttpRequestBodyInit | undefined,
-  request: UploadOptions,
-): Promise<Response> {
-  const { signal, progress } = request;
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(signal.reason);
-    const xhr = new XMLHttpRequest();
-    xhr.open(method, url);
-    xhr.responseType = "blob";
-    headers.forEach((value, name) => xhr.setRequestHeader(name, value));
-    if (progress !== undefined) {
-      const report = (event: ProgressEvent) => progress(event.loaded, event.total);
-      for (const type of ["loadstart", "progress", "load"]) {
-        xhr.upload.addEventListener(type, report as EventListener);
-      }
-    }
-    const abort = () => xhr.abort();
-    signal?.addEventListener("abort", abort, { once: true });
-    xhr.addEventListener("loadend", () => signal?.removeEventListener("abort", abort));
-    xhr.addEventListener("load", () => {
-      try {
-        resolve(response(xhr));
-      } catch (error) {
-        reject(error);
-      }
-    });
-    xhr.addEventListener("error", () => reject(new TypeError(`${method} ${url} failed`)));
-    xhr.addEventListener("abort", () => reject(signal?.reason));
-    xhr.send(payload ?? null);
-  });
-}
-
-function response(xhr: XMLHttpRequest): Response {
-  const headers = new Headers();
-  for (const line of xhr.getAllResponseHeaders().trim().split(/\r?\n/)) {
-    const colon = line.indexOf(":");
-    if (colon > 0) headers.append(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
-  }
-  const empty = [204, 205, 304].includes(xhr.status);
-  return new Response(empty ? null : (xhr.response as Blob), {
-    status: xhr.status,
-    statusText: xhr.statusText,
-    headers,
-  });
-}
-
 async function* events(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined,
@@ -370,27 +302,6 @@ async function* events(
   }
 }
 
-async function settle(token: Promise<string | undefined>): Promise<string | undefined> {
-  try {
-    return await token;
-  } catch {
-    return undefined;
-  }
-}
-
-function join(base: string, path: string, query: RequestOptions["query"]): string {
-  let url = `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
-  const params = new URLSearchParams();
-  for (const [name, value] of Object.entries(query ?? {})) {
-    if (value === undefined) continue;
-    for (const each of Array.isArray(value) ? value : [value]) params.append(name, String(each));
-  }
-  if (params.size > 0) url += `${url.includes("?") ? "&" : "?"}${params}`;
-  return url;
-}
-
-class Unencodable extends Error {}
-
 function encode(body: unknown, headers: Headers): XMLHttpRequestBodyInit | undefined {
   if (body === undefined) return undefined;
   if (
@@ -411,92 +322,4 @@ function encode(body: unknown, headers: Headers): XMLHttpRequestBodyInit | undef
   if (json === undefined) throw new Unencodable();
   headers.set("Content-Type", "application/json");
   return json;
-}
-
-function mediaType(response: Response): string {
-  return (response.headers.get("Content-Type") ?? "").split(";")[0].trim().toLowerCase();
-}
-
-function isJSON(type: string): boolean {
-  return type === "application/json" || type.endsWith("+json");
-}
-
-async function decode<T>(response: Response, as?: "text"): Promise<Result<T>> {
-  if (!response.ok) return { ok: false, problem: await problem(response) };
-  if (as === "text") return { ok: true, data: (await response.text()) as T };
-  const type = mediaType(response);
-  const blob = await response.blob();
-  if (response.status === 204 || response.status === 205 || blob.size === 0) {
-    return { ok: true, data: undefined as T };
-  }
-  if (isJSON(type)) {
-    const text = await blob.text();
-    try {
-      return { ok: true, data: JSON.parse(text) as T };
-    } catch (error) {
-      return {
-        ok: false,
-        problem: {
-          type: "urn:standards-lab:problem:decode",
-          status: response.status,
-          title: "Response not decodable",
-          detail: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  }
-  if (type.startsWith("text/")) return { ok: true, data: (await blob.text()) as T };
-  return { ok: true, data: blob as T };
-}
-
-async function problem(response: Response): Promise<Problem> {
-  const fallback = `HTTP ${response.status}`;
-  if (mediaType(response) === "application/problem+json") {
-    let document: unknown;
-    try {
-      document = JSON.parse(await response.text());
-    } catch {}
-    if (typeof document === "object" && document !== null && !Array.isArray(document)) {
-      const members = document as Record<string, unknown>;
-      return {
-        ...members,
-        type: typeof members.type === "string" ? members.type : "about:blank",
-        status: typeof members.status === "number" ? members.status : response.status,
-        title: typeof members.title === "string" && members.title ? members.title : fallback,
-      };
-    }
-  } else {
-    await response.body?.cancel();
-  }
-  return { type: "about:blank", status: response.status, title: response.statusText || fallback };
-}
-
-function failure(error: unknown, signal: AbortSignal | undefined): Problem {
-  if (error instanceof Unencodable) {
-    const problem: Problem = {
-      type: "urn:standards-lab:problem:encode",
-      status: 0,
-      title: "Request not encodable",
-    };
-    if (error.message) problem.detail = error.message;
-    return problem;
-  }
-  if (signal?.aborted) {
-    const reason: unknown = signal.reason;
-    if (
-      typeof reason === "object" &&
-      reason !== null &&
-      "name" in reason &&
-      reason.name === "TimeoutError"
-    ) {
-      return { type: "urn:standards-lab:problem:timeout", status: 0, title: "Request timed out" };
-    }
-    return { type: "urn:standards-lab:problem:abort", status: 0, title: "Request aborted" };
-  }
-  return {
-    type: "urn:standards-lab:problem:network",
-    status: 0,
-    title: "Network error",
-    detail: error instanceof Error ? error.message : String(error),
-  };
 }
