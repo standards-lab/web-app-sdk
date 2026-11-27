@@ -4,6 +4,31 @@ All notable changes to `@standards-lab/web-app-sdk` are documented here. The for
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-27
+
+### Added
+
+- `./upload.js`: `createUploader`, a resumable upload client for
+  draft-ietf-httpbis-resumable-upload-16 at `Upload-Draft-Interop-Version` 11 (`DRAFT_REVISION`,
+  `INTEROP_VERSION`), proven against go-web-sdk v0.19.0's upload handler. `create` hashes the file
+  with SHA-256 and creates the upload resource; `open` resumes one from its saved location at the
+  server's offset, after a reload; an `Upload`'s `send` appends the file in chunks, reporting its
+  progress, and `cancel` deletes it. Every operation resolves to a `Result` and never rejects. A
+  request that gets no response, a 429, or a 5xx is repeated, within `attempts` and after `delay`,
+  resuming from the offset a HEAD reads; a 409 resumes from the offset it names, and a 413 resends
+  a smaller chunk. Each request carries the `TokenProvider`'s bearer token, refreshed once on a
+  401, as the API client's do.
+- The browser tier runs the uploader against `test/server`, a Go test server mounting
+  go-web-sdk's upload handler, with faults and controls the tests drive.
+
+### Changed
+
+- The development tools pin Go 1.27.4, which the browser tier needs; `mise run install` also
+  downloads the test server's Go module. `mise run currency` also reports the test server's Go
+  requirements and go directive, and a draft revision newer than `DRAFT_REVISION`.
+- Currency: marathon 0.24.1, chrome-headless-shell 158.0.8127.88, @types/node 26.6.11, eslint
+  10.16.0, and eslint-plugin-boundaries 7.4.5.
+
 ## [0.1.0] - 2026-11-19
 
 ### Added
@@ -39,4 +64,5 @@ All notable changes to `@standards-lab/web-app-sdk` are documented here. The for
 - Releases by tag: each `v<version>` tag marks a pack commit whose tree is the pack, the build
   included, and whose one parent is main's merge commit; its GitHub release carries the tarball.
 
+[0.2.0]: https://github.com/standards-lab/web-app-sdk/releases/tag/v0.2.0
 [0.1.0]: https://github.com/standards-lab/web-app-sdk/releases/tag/v0.1.0

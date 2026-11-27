@@ -19,6 +19,7 @@ const publics = [
   "./events/nats.js",
   "./upload.js",
 ];
+const internals = ["./eventstream.js", "./transport.js", "./fields.js", "./sha256.js"];
 const conditions: [string[], string][] = [
   [[], ".js"],
   [["--conditions=types"], ".d.ts"],
@@ -108,11 +109,12 @@ describe("release pack", () => {
     }
   });
 
-  test("the internal eventstream.js doesn't resolve through the package's name", () => {
+  test("no internal module resolves through the package's name", () => {
     for (const [flags] of conditions) {
-      assert.deepEqual(resolveSelf(pack, ["./eventstream.js"], flags), [
-        { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" },
-      ]);
+      assert.deepEqual(
+        resolveSelf(pack, internals, flags),
+        internals.map(() => ({ code: "ERR_PACKAGE_PATH_NOT_EXPORTED" })),
+      );
     }
   });
 
